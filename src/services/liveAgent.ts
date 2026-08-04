@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { matchIntent } from "./intentEngine";
 
 // ============================================================
 // ZOD SCHEMAS
@@ -362,24 +363,70 @@ export class LiveAgent {
     this.update({ status: "thinking", transcript: text });
     const useAI = (this.config as any).useAI !== false;
     if (useAI) { await this.sendTextWithAI(text); }
-    else { await this.sendTextLocal(text); }
+    else { await this.sendTextSmart(text); }
     this.update({ status: "idle" });
   }
 
-  private async sendTextLocal(text: string) {
-    const parsed = this.localParse(text);
-    if (parsed.tool === "unknown") {
+  private async sendTextSmart(text: string) {
+    // Tenta semântico primeiro, fallback pra regex
+    let tool = "";
+    let args: Record<string, any> = {};
+
+    try {
+      const match = await matchIntent(text);
+      if (match) {
+        tool = match.intent;
+        // Extrai parâmetros com regex (nomes, quantidades, preços)
+        args = this.extractArgs(text);
+      }
+    } catch {}
+
+    // Fallback: regex parser (já expandido)
+    if (!tool) {
+      const parsed = this.localParse(text);
+      tool = parsed.tool;
+      args = parsed.args;
+    }
+
+    if (tool === "unknown") {
       const msg = "Não entendi. O que posso fazer:\n\n• cadastrar [nome] [qtd]\n• adicionar [qtd] de [nome]\n• gastar [qtd] de [nome]\n• consultar [nome]\n• resumo\n• alertas\n• criar produto [nome] preço [valor]";
       this.update({ response: msg }); this.speak(msg); return;
     }
+
     try {
-      const result = await this.executeTool(parsed.tool, parsed.args);
-      const msg = this.formatResultDirect(parsed.tool, result);
-      this.update({ lastAction: parsed.tool, response: msg }); this.speak(msg);
+      const result = await this.executeTool(tool, args);
+      const msg = this.formatResultDirect(tool, result);
+      this.update({ lastAction: tool, response: msg }); this.speak(msg);
     } catch (err: any) {
-      const msg = "Erro: " + err.message;
-      this.update({ response: msg }); this.speak(msg);
+      this.speak("Erro: " + err.message);
     }
+  }
+
+  private extractArgs(text: string): Record<string, any> {
+    const lower = text.toLowerCase();
+    const args: Record<string, any> = {};
+
+    // Extrai nome do insumo/produto (após verbos de ação)
+    const nameMatch = lower.match(/(?:insumo|item|ingrediente|produto|prod)?\s*(.+?)(?:\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[çc]o|custo|a|por|valor)\s*r?\$?\s*(\d+[\.,]?\d*))?\s*$/);
+    if (nameMatch) {
+      args.name = nameMatch[1].trim();
+      if (nameMatch[2]) {
+        const factor = nameMatch[3] === "kg" ? 1000 : nameMatch[3] === "l" ? 1000 : 1;
+        args.quantity = parseFloat(nameMatch[2].replace(",", ".")) * factor;
+        args.unit = nameMatch[3] === "kg" ? "g" : nameMatch[3] === "l" ? "ml" : (nameMatch[3] || "g");
+      }
+      if (nameMatch[4]) args.unitCost = parseFloat(nameMatch[4].replace(",", "."));
+    }
+
+    // Extrai nome para add/remove
+    const stockMatch = lower.match(/(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+    if (stockMatch) {
+      const factor = stockMatch[2] === "kg" ? 1000 : stockMatch[2] === "l" ? 1000 : 1;
+      args.item_name = stockMatch[3].trim();
+      args.quantity = parseFloat(stockMatch[1].replace(",", ".")) * factor;
+    }
+
+    return args;
   }
 
   private localParse(text: string): { tool: string; args: Record<string, any> } {
