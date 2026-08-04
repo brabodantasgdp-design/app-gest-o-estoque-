@@ -60,20 +60,19 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
   const [showUserForm, setShowUserForm] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPass, setNewUserPass] = useState('');
   const [newUserRole, setNewUserRole] = useState('store_owner');
   const [newUserTenant, setNewUserTenant] = useState('');
 
   useEffect(() => { usersService.getAll().then(setAllUsers).catch(() => {}); }, []);
 
   const handleAddUser = async () => {
-    if (!newUserName || !newUserEmail || !newUserPass || !newUserTenant) return;
+    if (!newUserName || !newUserEmail || !newUserTenant) return;
     try {
       await usersService.create({
-        name: newUserName, email: newUserEmail, password_hash: newUserPass,
+        name: newUserName, email: newUserEmail,
         role: newUserRole, tenant_id: newUserTenant,
       });
-      setNewUserName(''); setNewUserEmail(''); setNewUserPass('');
+      setNewUserName(''); setNewUserEmail('');
       setShowUserForm(false);
       const updated = await usersService.getAll();
       setAllUsers(updated);
@@ -599,19 +598,14 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
         </div>
 
         {showUserForm && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
-            <input placeholder="Nome" value={newUserName} onChange={e => setNewUserName(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40"/>
-            <input placeholder="Email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40"/>
-            <input placeholder="Senha" type="password" value={newUserPass} onChange={e => setNewUserPass(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40"/>
+          <div className="flex flex-wrap gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
+            <input placeholder="Nome" value={newUserName} onChange={e => setNewUserName(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40 w-full sm:w-auto"/>
+            <input placeholder="Email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40 w-full sm:w-auto"/>
             <select value={newUserTenant} onChange={e => setNewUserTenant(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40">
               <option value="">Selecione a loja</option>
               {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40">
-              <option value="store_owner">Dono</option>
-              <option value="employee">Funcionário</option>
-            </select>
-            <button onClick={handleAddUser} className="col-span-2 md:col-span-1 px-4 py-2 rounded-lg bg-amber-500 text-black font-extrabold text-xs hover:bg-amber-400 cursor-pointer">Salvar</button>
+            <button onClick={handleAddUser} className="px-4 py-2 rounded-lg bg-amber-500 text-black font-extrabold text-xs hover:bg-amber-400 cursor-pointer">Criar</button>
           </div>
         )}
 

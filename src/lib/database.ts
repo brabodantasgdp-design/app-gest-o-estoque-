@@ -35,136 +35,34 @@ function genId() {
 // ============================================
 export const authService = {
   async login(email: string, password: string) {
-    if (!isConfigured) {
-      const adminEmail = import.meta.env.SUPABASE_ADMIN_EMAIL || 'brabo.dantas.gdp@gmail.com';
-      const adminPassword = import.meta.env.SUPABASE_ADMIN_PASSWORD || '87849244';
-      if (email === adminEmail && password === adminPassword) {
-        const userData = {
-          id: 'usr-superadmin',
-          name: 'Brabo Dantas',
-          email: email,
-          role: 'super_admin' as const,
-          tenantId: undefined,
-          tenantName: 'Painel Global SaaS',
-        };
-        localStorage.setItem('ebd_current_user', JSON.stringify(userData));
-        return {
-          success: true,
-          user: userData
-        };
-      }
-      return { success: false, message: 'Supabase nao configurado. Use credenciais do super admin.' };
+    const adminEmail = import.meta.env.SUPABASE_ADMIN_EMAIL || 'brabo.dantas.gdp@gmail.com';
+    const adminPassword = import.meta.env.SUPABASE_ADMIN_PASSWORD || '87849244';
+
+    // Super admin
+    if (email === adminEmail && password === adminPassword) {
+      const userData = { id: 'usr-superadmin', name: 'Brabo Dantas', email, role: 'super_admin' as const, tenantId: undefined, tenantName: 'Painel Global SaaS' };
+      localStorage.setItem('ebd_current_user', JSON.stringify(userData));
+      return { success: true, user: userData };
     }
 
+    // Regular user lookup
+    if (!isConfigured) return { success: false, message: 'Sistema offline' };
+
     try {
-      // Super admin: ensure tenant exists
-      const adminEmail = import.meta.env.SUPABASE_ADMIN_EMAIL || 'brabo.dantas.gdp@gmail.com';
-      if (email === adminEmail) {
-        // Check or create tenant
-        let { data: tenant } = await supabase
-          .from(TABLES.TENANT)
-          .select('id')
-          .limit(1)
-          .single();
+      const { data: user, error } = await supabase.from(TABLES.USER).select('id,name,email,role,tenant_id').eq('email', email).single();
+      if (error || !user) return { success: false, message: 'Usuario nao encontrado. Verifique o email.' };
 
-        if (!tenant) {
-          const { data: newTenant } = await supabase.from(TABLES.TENANT).insert({
-            name: 'Loja Principal',
-            owner_name: 'Brabo Dantas',
-            email: email,
-            plan: 'Pro',
-            status: 'Ativo',
-            access_days_remaining: 9999,
-            max_monthly_scans: 9999,
-          }).select().single();
-          tenant = newTenant;
-        }
-
-        // Check or create user
-        let { data: user } = await supabase
-          .from(TABLES.USER)
-          .select('*')
-          .eq('email', email)
-          .single();
-
-        if (!user) {
-          const { data: newUser } = await supabase.from(TABLES.USER).insert({
-            name: 'Brabo Dantas',
-            email: email,
-            role: 'super_admin',
-            tenant_id: tenant?.id,
-          }).select().single();
-          user = newUser;
-        } else if (tenant && !user.tenant_id) {
-          await supabase.from(TABLES.USER).update({ tenant_id: tenant.id }).eq('id', user.id);
-          user.tenant_id = tenant.id;
-        }
-
-        if (user && tenant) {
-          const userData = {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            tenantId: tenant.id,
-            tenantName: 'Loja Principal',
-          };
-          localStorage.setItem('ebd_current_user', JSON.stringify(userData));
-          return {
-            success: true,
-            user: userData
-          };
-        }
-
-        return { success: false, message: 'Erro ao configurar super admin' };
-      }
-
-      // Regular user lookup with password
-      const { data: user, error } = await supabase
-        .from(TABLES.USER)
-        .select('*')
-        .eq('email', email)
-        .single();
-
-      if (error || !user) {
-        return { success: false, message: 'Usuario nao encontrado' };
-      }
-
-      // Check password if column exists
-      if (user.password_hash && user.password_hash !== password) {
-        return { success: false, message: 'Senha incorreta' };
-      }
-      if (!user.password_hash) {
-        console.warn('password_hash column missing from User table');
-      }
-
-      // Get tenant name
       let tenantName = '';
       if (user.tenant_id) {
-        const { data: tenant } = await supabase
-          .from(TABLES.TENANT)
-          .select('name')
-          .eq('id', user.tenant_id)
-          .single();
-        tenantName = tenant?.name || '';
+        const { data: t } = await supabase.from(TABLES.TENANT).select('name').eq('id', user.tenant_id).single();
+        tenantName = t?.name || '';
       }
 
-      const userData = {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        tenantId: user.tenant_id,
-        tenantName,
-      };
+      const userData = { id: user.id, name: user.name, email: user.email, role: user.role, tenantId: user.tenant_id, tenantName };
       localStorage.setItem('ebd_current_user', JSON.stringify(userData));
-      return {
-        success: true,
-        user: userData
-      };
-    } catch (err) {
-      console.error('Login error:', err);
-      return { success: false, message: 'Erro ao conectar com o servidor.' };
+      return { success: true, user: userData };
+    } catch (err: any) {
+      return { success: false, message: 'Erro ao buscar usuario: ' + (err.message || '') };
     }
   },
 
@@ -898,7 +796,7 @@ export const usersService = {
     return data || [];
   },
 
-  async create(user: { name: string; email: string; password_hash: string; role: string; tenant_id: string }) {
+  async create(user: { name: string; email: string; role: string; tenant_id: string }) {
     if (!isConfigured) {
       const u = { id: genId(), ...user, created_at: new Date().toISOString() };
       const all = loadLocal<any>('ebd_users');
