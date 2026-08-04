@@ -13,10 +13,11 @@ import { SuperAdminModule } from './components/SuperAdminModule';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginForm } from './components/Auth/LoginForm';
+import { VoiceAssistant } from './components/VoiceAssistant';
 import {
   CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
 } from './types';
-import { LogOut, UserCheck, Edit2, X, Save } from 'lucide-react';
+import { LogOut, UserCheck, Edit2, X, Save, Mic } from 'lucide-react';
 import {
   tenantsService,
   insumosService,
@@ -43,6 +44,7 @@ export default function App() {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [allInvoices, setAllInvoices] = useState<InvoiceScan[]>([]);
+  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -231,6 +233,117 @@ export default function App() {
       setIsProfileModalOpen(false);
     }
   }, [currentUser, profileName, profileEmail]);
+
+  // Voice Assistant Handlers
+  const handleVoiceNavigate = useCallback((module: string) => {
+    setActiveTab(module as TabType);
+  }, []);
+
+  const handleVoiceAddStock = useCallback(async (product: string, quantity: number, unit: string) => {
+    const insumo = allInsumos.find(i => i.name.toLowerCase().includes(product.toLowerCase()));
+    if (!insumo) throw new Error(`Insumo "${product}" não encontrado`);
+    await insumosService.update(insumo.id, {
+      ...insumo,
+      currentStock: insumo.currentStock + quantity,
+      lastUpdated: new Date().toISOString().split('T')[0],
+    });
+    await handleRefreshData();
+  }, [allInsumos, handleRefreshData]);
+
+  const handleVoiceRemoveStock = useCallback(async (product: string, quantity: number, unit: string) => {
+    const insumo = allInsumos.find(i => i.name.toLowerCase().includes(product.toLowerCase()));
+    if (!insumo) throw new Error(`Insumo "${product}" não encontrado`);
+    await insumosService.update(insumo.id, {
+      ...insumo,
+      currentStock: Math.max(0, insumo.currentStock - quantity),
+      lastUpdated: new Date().toISOString().split('T')[0],
+    });
+    await handleRefreshData();
+  }, [allInsumos, handleRefreshData]);
+
+  const handleVoiceCreateInsumo = useCallback(async (name: string, quantity: number, unit: string, price: number) => {
+    await insumosService.create({
+      id: `ins-${Date.now()}`,
+      tenantId: activeTenantId,
+      code: `INS-${Math.floor(100 + Math.random() * 900)}`,
+      name,
+      category: 'Via Voz',
+      unit: unit as 'g' | 'ml' | 'un',
+      currentStock: quantity,
+      minStock: Math.floor(quantity * 0.2),
+      unitCost: price / quantity,
+      supplier: 'Via assistente de voz',
+      lastUpdated: new Date().toISOString().split('T')[0],
+    });
+    await handleRefreshData();
+  }, [activeTenantId, handleRefreshData]);
+
+  const handleVoiceDeleteInsumo = useCallback(async (name: string) => {
+    const insumo = allInsumos.find(i => i.name.toLowerCase().includes(name.toLowerCase()));
+    if (!insumo) throw new Error(`Insumo "${name}" não encontrado`);
+    await insumosService.delete(insumo.id);
+    await handleRefreshData();
+  }, [allInsumos, handleRefreshData]);
+
+  const handleVoiceCreateProduct = useCallback(async (name: string, price: number) => {
+    await productsService.create({
+      id: `prod-${Date.now()}`,
+      tenantId: activeTenantId,
+      name,
+      price,
+      cost: 0,
+      margin: 0,
+      category: 'Via Voz',
+      description: 'Criado via assistente de voz',
+      active: true,
+      createdAt: new Date().toISOString(),
+    });
+    await handleRefreshData();
+  }, [activeTenantId, handleRefreshData]);
+
+  const handleVoiceUpdateProduct = useCallback(async (name: string, price: number) => {
+    const product = allProducts.find(p => p.name.toLowerCase().includes(name.toLowerCase()));
+    if (!product) throw new Error(`Produto "${name}" não encontrado`);
+    await productsService.update(product.id, { ...product, price });
+    await handleRefreshData();
+  }, [allProducts, handleRefreshData]);
+
+  const handleVoiceDeleteProduct = useCallback(async (name: string) => {
+    const product = allProducts.find(p => p.name.toLowerCase().includes(name.toLowerCase()));
+    if (!product) throw new Error(`Produto "${name}" não encontrado`);
+    await productsService.delete(product.id);
+    await handleRefreshData();
+  }, [allProducts, handleRefreshData]);
+
+  const handleVoiceCreateOrder = useCallback(async (customer: string, product: string, quantity: number) => {
+    const prod = allProducts.find(p => p.name.toLowerCase().includes(product.toLowerCase()));
+    if (!prod) throw new Error(`Produto "${product}" não encontrado`);
+    await ordersService.create({
+      id: `ord-${Date.now()}`,
+      tenantId: activeTenantId,
+      customerName: customer,
+      items: [{ productId: prod.id, productName: prod.name, quantity, unitPrice: prod.price, subtotal: prod.price * quantity }],
+      totalAmount: prod.price * quantity,
+      status: 'Pendente',
+      createdAt: new Date().toISOString(),
+    });
+    await handleRefreshData();
+  }, [allProducts, activeTenantId, handleRefreshData]);
+
+  const handleVoiceQueryStock = useCallback((name: string) => {
+    const insumo = allInsumos.find(i => i.name.toLowerCase().includes(name.toLowerCase()));
+    if (!insumo) return null;
+    return { currentStock: insumo.currentStock, unit: insumo.unit };
+  }, [allInsumos]);
+
+  const handleVoiceGetDashboardSummary = useCallback(() => {
+    return {
+      totalNotas: allInvoices.length,
+      totalGasto: allInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0),
+      totalProdutos: allProducts.length,
+      totalPedidos: allOrders.length,
+    };
+  }, [allInvoices, allProducts, allOrders]);
 
   if (authLoading) {
     return (
@@ -467,6 +580,37 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Voice Assistant Floating Button */}
+      <button
+        onClick={() => setIsVoiceAssistantOpen(true)}
+        className="fixed bottom-24 lg:bottom-8 right-4 lg:right-8 z-40 p-4 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg shadow-orange-500/30 hover:from-amber-600 hover:to-orange-600 transition-all active:scale-95"
+      >
+        <Mic className="w-6 h-6" />
+      </button>
+
+      {/* Voice Assistant Modal */}
+      <VoiceAssistant
+        isOpen={isVoiceAssistantOpen}
+        onClose={() => setIsVoiceAssistantOpen(false)}
+        insumos={tenantInsumos}
+        products={tenantProducts}
+        orders={tenantOrders}
+        fichas={tenantFichas}
+        invoices={tenantInvoices}
+        tenant={currentTenant}
+        onNavigate={handleVoiceNavigate}
+        onAddStock={handleVoiceAddStock}
+        onRemoveStock={handleVoiceRemoveStock}
+        onCreateInsumo={handleVoiceCreateInsumo}
+        onDeleteInsumo={handleVoiceDeleteInsumo}
+        onCreateProduct={handleVoiceCreateProduct}
+        onUpdateProduct={handleVoiceUpdateProduct}
+        onDeleteProduct={handleVoiceDeleteProduct}
+        onCreateOrder={handleVoiceCreateOrder}
+        onQueryStock={handleVoiceQueryStock}
+        onGetDashboardSummary={handleVoiceGetDashboardSummary}
+      />
 
     </div>
   );
