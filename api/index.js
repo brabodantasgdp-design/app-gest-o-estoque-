@@ -90,6 +90,53 @@ app.post("/api/ebdAi/agent", async (req, res) => {
   }
 });
 
+// EBD AI Chat
+app.post("/api/ebdAi", async (req, res) => {
+  try {
+    const { messages, companyId } = req.body;
+    if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: "messages required" });
+    if (!GEMINI_API_KEY) return res.json({ success: true, response: "IA offline. Use o app manualmente.", source: "local" });
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const last = messages[messages.length - 1]?.content || "";
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: last }] }],
+      config: { systemInstruction: "Voce e a EBD AI. Seja breve e profissional. Portugues do Brasil.", maxOutputTokens: 512 },
+    });
+    return res.json({ success: true, response: response.text || "", source: "gemini" });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+});
+
+// OCR Invoice
+app.post("/api/ocr-invoice", async (req, res) => {
+  try {
+    const { imageBase64, mimeType } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: "imageBase64 required" });
+    if (!GEMINI_API_KEY) return res.json({ success: true, source: "offline", invoiceData: { supplierName: "OCR offline", items: [] } });
+    const { GoogleGenAI, Type } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: { parts: [{ inlineData: { data: imageBase64, mimeType: mimeType || "image/jpeg" } }, { text: "Extraia dados desta NF-e como JSON." }] },
+      config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { supplierName: { type: Type.STRING }, cnpj: { type: Type.STRING }, invoiceNumber: { type: Type.STRING }, totalAmount: { type: Type.NUMBER }, items: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { rawName: { type: Type.STRING }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, unitCost: { type: Type.NUMBER } } } } }, required: ["supplierName"] } },
+    });
+    return res.json({ success: true, source: "gemini", invoiceData: JSON.parse(response.text || "{}") });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+});
+
+// CSV Export
+app.get("/api/invoices/export", (req, res) => {
+  const { tenantId = "tenant-1" } = req.query;
+  let items = MOCK_INVOICES;
+  if (tenantId && tenantId !== "all") items = items.filter((i) => i.tenantId === tenantId);
+  let csv = "ID,NF,Fornecedor,CNPJ,Data,Categoria,Valor,Status\n";
+  items.forEach((inv) => { csv += `"${inv.id}","${inv.invoiceNumber}","${inv.supplierName}","${inv.cnpj}","${inv.invoiceDate}","${inv.category}",${inv.totalAmount},"${inv.processed ? "Processada" : "Pendente}"` + "\n"; });
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename=notas_${tenantId}.csv`);
+  return res.send(csv);
+});
+
 // ============================================================
 // BUFFER DEBOUNCE (acumula msgs por X segundos antes de processar)
 // ============================================================

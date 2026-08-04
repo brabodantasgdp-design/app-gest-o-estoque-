@@ -13,7 +13,6 @@ import { SuperAdminModule } from './components/SuperAdminModule';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginForm } from './components/Auth/LoginForm';
-import { LiveAgentIndicator } from './components/LiveAgentIndicator';
 import {
   CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
 } from './types';
@@ -242,12 +241,6 @@ export default function App() {
   // Voice Assistant Handlers
   const handleVoiceNavigate = useCallback((module: string) => {
     setActiveTab(module as TabType);
-  }, []);
-
-  const handleAgentNavigate = useCallback((target: string) => {
-    if (target === "add-insumo") { setActiveTab("insumos"); return; }
-    if (target === "add-produto") { setActiveTab("products"); return; }
-    setActiveTab(target as TabType);
   }, []);
 
   const handleVoiceAddStock = useCallback(async (product: string, quantity: number, unit: string) => {
@@ -593,10 +586,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
-
-      {currentUser && activeTenantId && (
-        <LiveAgentIndicator tenantId={activeTenantId} onRefresh={handleRefreshData} onNavigate={handleAgentNavigate} />
       )}
 
     </div>
