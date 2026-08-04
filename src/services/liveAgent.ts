@@ -368,6 +368,7 @@ export class LiveAgent {
   private memory: MemoryStore | null = null;
   private audioCtx: AudioContext | null = null;
   private proactiveInterval: number;
+  private mediaRecorder: MediaRecorder | null = null;
 
   state: LiveAgentState = {
     status: "disconnected",
@@ -432,12 +433,15 @@ export class LiveAgent {
 
   stop() {
     this.clearTimers();
+    this.stopMediaRecorder();
     this.session?.close?.();
+    this.session = null;
     this.mediaStream?.getTracks().forEach((t) => t.stop());
     this.mediaStream = null;
     this.stopProactiveMonitoring();
     this.audioCtx?.close();
     this.audioCtx = null;
+    this.reconnectAttempts = 0;
     this.update({ status: "disconnected", listening: false });
   }
 
@@ -473,28 +477,20 @@ export class LiveAgent {
     const fullSystemPrompt = SYSTEM_INSTRUCTION + memoryContext;
 
     this.session = await this.ai.live.connect({
-      model: "gemini-live-2.5-flash-preview",
+      model: "gemini-2.5-flash-live-preview",
       config: {
         systemInstruction: fullSystemPrompt,
         tools: TOOLS as any,
         responseModalities: ["AUDIO"] as any,
-        generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 300,
-          topP: 0.95,
-        },
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {},
-          },
-        },
+        temperature: 0.8,
+        maxOutputTokens: 300,
+        topP: 0.95,
         inputAudioTranscription: {},
         outputAudioTranscription: {},
       } as any,
       callbacks: {
         onopen: () => {
           console.log("[EBD] Connected");
-          this.reconnectAttempts = 0;
           this.update({ status: "connected", listening: true, error: null });
           this.startStreamingAudio();
         },
@@ -506,19 +502,25 @@ export class LiveAgent {
         },
         onclose: () => {
           console.log("[EBD] Connection closed");
+          this.stopMediaRecorder();
           this.update({ status: "disconnected", listening: false });
-          this.scheduleReconnect();
+          if (this.reconnectAttempts < 5) {
+            this.scheduleReconnect();
+          }
         },
       },
     });
   }
 
   private scheduleReconnect() {
-    this.clearTimers();
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    if (this.reconnectTimer) return; // already scheduled
+    const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
     console.log(`[EBD] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    this.reconnectTimer = setTimeout(() => this.start(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.start();
+    }, delay);
   }
 
   // ============================================================
@@ -527,23 +529,29 @@ export class LiveAgent {
 
   private startStreamingAudio() {
     if (!this.mediaStream || !this.session) return;
+    this.stopMediaRecorder();
 
-    let mimeType = "audio/webm;codecs=opus";
-    if (!MediaRecorder.isTypeSupported(mimeType)) {
-      mimeType = "audio/webm";
-    }
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
 
-    const mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType });
+    this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType });
 
-    mediaRecorder.ondataavailable = (event) => {
+    this.mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0 && this.session && this.state.status === "connected") {
-        try {
-          this.session.sendRealtimeInput({ media: event.data });
-        } catch {}
+        try { this.session.sendRealtimeInput({ media: event.data }); } catch {}
       }
     };
 
-    mediaRecorder.start(100);
+    this.mediaRecorder.start(100);
+    console.log("[EBD] Microphone streaming started");
+  }
+
+  private stopMediaRecorder() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      this.mediaRecorder.stop();
+    }
+    this.mediaRecorder = null;
   }
 
   // ============================================================
