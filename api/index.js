@@ -5,10 +5,9 @@ dotenv.config();
 const app = express();
 app.use(express.json({ limit: "25mb" }));
 
-// WhatsApp config
-const EVO_URL = process.env.EVOLUTION_API_URL || "";
-const EVO_KEY = process.env.EVOLUTION_API_KEY || "";
-const EVO_INSTANCE = process.env.EVOLUTION_INSTANCE || "default";
+// WhatsApp config (UAZAPI)
+const UAZAPI_URL = process.env.UAZAPI_BASE_URL || "";
+const UAZAPI_TOKEN = process.env.UAZAPI_INSTANCE_TOKEN || "";
 
 const MOCK_INVOICES = [
   { id: "inv-101", tenantId: "tenant-1", supplierName: "Distribuidores & Atacadista do Sul Ltda", cnpj: "12.345.678/0001-90", invoiceNumber: "NF-84920", invoiceDate: "2026-08-03", totalAmount: 1450.80, category: "insumos", notes: "Reposição de farinhas.", processed: true, processedAt: "14:20", items: [] },
@@ -92,152 +91,211 @@ app.post("/api/ebdAi/agent", async (req, res) => {
 });
 
 // ============================================================
-// WHATSAPP WEBHOOK (Evolution API)
+// BUFFER DEBOUNCE (acumula msgs por X segundos antes de processar)
+// ============================================================
+const BUFFER_SECONDS = parseInt(process.env.BUFFER_SECONDS || "6");
+const buffers = {}; // { number: { texts: [], timer: Timeout } };
+
+function bufferAdd(number, text, onFlush) {
+  if (!buffers[number]) buffers[number] = { texts: [], timer: null };
+  const b = buffers[number];
+  b.texts.push(text);
+  if (b.timer) clearTimeout(b.timer);
+  b.timer = setTimeout(() => {
+    const texts = [...b.texts];
+    delete buffers[number];
+    console.log(`[buffer] flush user=${number} msgs=${texts.length}`);
+    onFlush(number, texts);
+  }, BUFFER_SECONDS * 1000);
+}
+
+// ============================================================
+// WHATSAPP WEBHOOK + REPLY ENGINE
 // ============================================================
 
-async function sendWhatsApp(number, text) {
-  if (!EVO_URL || !EVO_KEY) return;
+async function sendWp(number, text) {
+  if (!UAZAPI_URL || !UAZAPI_TOKEN) return;
   try {
-    await fetch(`${EVO_URL}/message/sendText/${EVO_INSTANCE}`, {
+    await fetch(`${UAZAPI_URL}/send/text`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", apikey: EVO_KEY },
-      body: JSON.stringify({ number, textMessage: { text } }),
+      headers: { "Content-Type": "application/json", token: UAZAPI_TOKEN },
+      body: JSON.stringify({ number, text }),
     });
-  } catch (e) { console.error("WhatsApp send error:", e.message); }
+  } catch (e) { console.error("sendWp error:", e.message); }
+}
+
+async function sendPresence(number, presence) {
+  if (!UAZAPI_URL || !UAZAPI_TOKEN) return;
+  try {
+    await fetch(`${UAZAPI_URL}/send/presence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: UAZAPI_TOKEN },
+      body: JSON.stringify({ number, presence }),
+    });
+  } catch {}
+}
+
+async function markRead(number, messageId) {
+  if (!UAZAPI_URL || !UAZAPI_TOKEN || !messageId || messageId === "0") return;
+  try {
+    await fetch(`${UAZAPI_URL}/send/read`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", token: UAZAPI_TOKEN },
+      body: JSON.stringify({ number, messageId }),
+    });
+  } catch {}
+}
+
+// Supabase command parser (mesma logica do Modo Local do liveAgent.ts)
+async function processCommand(text, tenantId) {
+  const lower = text.toLowerCase().trim();
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) return "Sistema offline.";
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // CADASTRAR
+  const regMatch = lower.match(/(?:cadastrar?|cria|novo)\s+(?:insumo|item|ingrediente)?\s*(.+?)(?:\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[çc]o|custo|a|por)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
+  if (regMatch) {
+    const name = regMatch[1]?.trim();
+    if (!name || name.length < 2) return null;
+    const rawQty = regMatch[2]; const rawUnit = regMatch[3] || "g"; const rawPrice = regMatch[4];
+    const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
+    const unit = rawUnit === "kg" ? "g" : rawUnit === "l" ? "ml" : rawUnit;
+    const { data: exist } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
+    if (exist) return `Insumo "${exist.name}" ja existe. Codigo: ${exist.code}`;
+    const qty = rawQty ? parseFloat(rawQty.replace(",", ".")) * factor : 0;
+    const code = "INS-" + Date.now().toString(36).toUpperCase();
+    const { error } = await supabase.from("insumos").insert({ tenant_id: tenantId, code, name, category: "Geral", unit, current_stock: qty, min_stock: Math.max(1, Math.floor(qty * 0.2)), unit_cost: rawPrice ? parseFloat(rawPrice.replace(",", ".")) : 0, supplier: "", last_updated: new Date().toISOString().split("T")[0] });
+    return error ? "Erro ao cadastrar." : `${name} cadastrado. ${qty}${unit} em estoque.`;
+  }
+
+  // ADICIONAR
+  const addMatch = lower.match(/(?:adicione?|adicionar|entrou|chegou|recebi|coloca|bota)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+  if (addMatch) {
+    const rawQty = parseFloat(addMatch[1].replace(",", ".")); const rawUnit = addMatch[2] || "g"; const name = addMatch[3]?.trim();
+    if (!name) return null;
+    const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
+    const { data: item } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
+    if (!item) return `Nao encontrei "${name}".`;
+    const ns = item.current_stock + rawQty * factor;
+    await supabase.from("insumos").update({ current_stock: ns, last_updated: new Date().toISOString().split("T")[0] }).eq("id", item.id);
+    return `+${rawQty * factor} de ${item.name}. Total: ${ns}${item.unit}.`;
+  }
+
+  // REMOVER
+  const remMatch = lower.match(/(?:gastou?|gastei|usou?|usei|remove?|remover|tirar|baixar|consumiu|perdi)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+  if (remMatch) {
+    const rawQty = parseFloat(remMatch[1].replace(",", ".")); const rawUnit = remMatch[2] || "g"; const name = remMatch[3]?.trim();
+    if (!name) return null;
+    const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
+    const { data: item } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
+    if (!item) return `Nao encontrei "${name}".`;
+    const ns = Math.max(0, item.current_stock - rawQty * factor);
+    await supabase.from("insumos").update({ current_stock: ns, last_updated: new Date().toISOString().split("T")[0] }).eq("id", item.id);
+    return ns <= 0 ? `${item.name} zerou!` : `-${rawQty * factor} de ${item.name}. Restam ${ns}${item.unit}.`;
+  }
+
+  // CONSULTAR
+  const qMatch = lower.match(/(?:quanto|qual|estoque|consultar?)\s+(?:tem|tenho|est[aá])?\s*(?:de|do|da)?\s*(.+)/);
+  if (qMatch) {
+    const name = qMatch[1]?.trim();
+    if (!name) return null;
+    const { data: item } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
+    return item ? `${item.name}: ${item.current_stock}${item.unit} (min: ${item.min_stock})` : `Nao encontrei "${name}".`;
+  }
+
+  // RESUMO
+  if (/(?:resumo|relat[oó]rio|como\s+(?:est[aá]|t[aá])|dashboard)/i.test(lower)) {
+    const { data: ins } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId);
+    const { data: prod } = await supabase.from("products").select("*").eq("tenant_id", tenantId);
+    const alerts = ins ? ins.filter(i => i.current_stock <= i.min_stock).length : 0;
+    return `${ins ? ins.length : 0} insumos, ${prod ? prod.length : 0} produtos. ${alerts} alertas.`;
+  }
+
+  // ALERTAS
+  if (/(?:alerta|estoque\s+baixo|cr[ií]tico|zerado|acabou|problema)/i.test(lower)) {
+    const { data: ins } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId);
+    const empty = ins ? ins.filter(i => i.current_stock <= 0) : [];
+    const critical = ins ? ins.filter(i => i.current_stock > 0 && i.current_stock <= i.min_stock * 0.5) : [];
+    const low = ins ? ins.filter(i => i.current_stock > i.min_stock * 0.5 && i.current_stock <= i.min_stock) : [];
+    if (empty.length === 0 && critical.length === 0 && low.length === 0) return "Tudo ok, sem alertas.";
+    return `${empty.length} zerados, ${critical.length} criticos, ${low.length} baixos.`;
+  }
+
+  return null; // comando nao reconhecido
+}
+
+function splitReply(text) {
+  const chunks = [];
+  for (const para of text.split(/\n\n+/)) {
+    const t = para.trim();
+    if (!t) continue;
+    if (t.length <= 800) { chunks.push(t); continue; }
+    const sentences = t.split(/(?<=\.)\s+/);
+    let current = "";
+    for (const s of sentences) {
+      if ((current + s).length > 800 && current) { chunks.push(current.trim()); current = s; }
+      else current += s;
+    }
+    if (current.trim()) chunks.push(current.trim());
+  }
+  return chunks.length > 0 ? chunks : [text];
+}
+
+async function flushAndReply(number, texts) {
+  const tenantId = process.env.DEFAULT_TENANT_ID || "tenant-1";
+  const combined = texts.join("\n");
+
+  // Try Gemini first, fall back to local parser
+  let reply = "";
+  try {
+    if (GEMINI_API_KEY) {
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const res = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: "user", parts: [{ text: combined }] }],
+        config: {
+          systemInstruction: "Voce e a EBD, assistente de estoque. Responda no WhatsApp. Seja breve, natural, maximo 2-3 frases. Use '\\n\\n' para separar ideias. Portugues do Brasil.",
+          maxOutputTokens: 300,
+        },
+      });
+      reply = res.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || "";
+    }
+  } catch (e) { console.log("[wp] Gemini off, usando parser local"); }
+
+  if (!reply) reply = (await processCommand(combined, tenantId)) || "Comandos: cadastrar [nome] [qtd], adicionar [qtd] de [nome], gastar [qtd] de [nome], consultar [nome], resumo, alertas.";
+
+  // Send reply in chunks with typing indicators
+  const chunks = splitReply(reply);
+  for (let i = 0; i < chunks.length; i++) {
+    await sendPresence(number, "composing");
+    await new Promise(r => setTimeout(r, 800 + Math.floor(chunks[i].length / 100) * 200));
+    await sendWp(number, chunks[i]);
+  }
+  await sendPresence(number, "paused");
 }
 
 app.post("/api/whatsapp/webhook", async (req, res) => {
+  res.sendStatus(200); // responde rapido, processa em background
   try {
-    const msg = req.body?.data?.message?.conversation || req.body?.data?.message?.extendedTextMessage?.text || req.body?.data?.text?.message || "";
-    const sender = req.body?.data?.key?.remoteJid?.replace("@s.whatsapp.net", "") || req.body?.data?.remoteJid || "";
-    if (!msg || !sender) return res.sendStatus(200);
+    const { event, data } = req.body;
+    if (event !== "message") return;
 
-    console.log(`[WhatsApp] ${sender}: ${msg}`);
+    const number = (data?.from || "").replace("@s.whatsapp.net", "").replace("@c.us", "");
+    const text = data?.body || "";
+    const type = data?.type || "text";
+    const fromMe = data?.fromMe === true;
+    const isGroup = data?.isGroup === true;
 
-    // Buscar tenant pelo numero (mapeamento simples)
-    const tenantId = req.body?.tenantId || process.env.DEFAULT_TENANT_ID || "tenant-1";
+    if (!number || !text || fromMe || isGroup || type !== "text") return;
 
-    // Processar com Supabase direto (mesma logica do Modo Local)
-    const { createClient } = await import("@supabase/supabase-js");
-    const supabaseUrl = process.env.VITE_SUPABASE_URL;
-    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseKey) {
-      await sendWhatsApp(sender, "Sistema offline. Tente novamente.");
-      return res.sendStatus(200);
-    }
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Parse local do comando
-    const lower = msg.toLowerCase().trim();
-    let reply = "";
-
-    // CADASTRAR
-    const regMatch = lower.match(/(?:cadastrar?|cria|novo)\s+(?:insumo|item|ingrediente)?\s*(.+?)(?:\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[çc]o|custo|a|por)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
-    if (regMatch) {
-      const name = regMatch[1]?.trim();
-      const rawQty = regMatch[2];
-      const rawUnit = regMatch[3] || "g";
-      const rawPrice = regMatch[4];
-      const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
-      const unit = rawUnit === "kg" ? "g" : rawUnit === "l" ? "ml" : rawUnit;
-      if (name && name.length > 2) {
-        const { data: existing } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
-        if (existing) {
-          reply = `Insumo "${existing.name}" ja existe. Codigo: ${existing.code}`;
-        } else {
-          const qty = rawQty ? parseFloat(rawQty.replace(",", ".")) * factor : 0;
-          const code = "INS-" + Date.now().toString(36).toUpperCase();
-          const { error } = await supabase.from("insumos").insert({
-            tenant_id: tenantId, code, name, category: "Geral", unit,
-            current_stock: qty, min_stock: Math.max(1, Math.floor(qty * 0.2)),
-            unit_cost: rawPrice ? parseFloat(rawPrice.replace(",", ".")) : 0, supplier: "",
-            last_updated: new Date().toISOString().split("T")[0],
-          });
-          reply = error ? "Erro ao cadastrar." : `${name} cadastrado. ${qty}${unit} em estoque.`;
-        }
-      }
-    }
-
-    // ADICIONAR
-    if (!reply) {
-      const addMatch = lower.match(/(?:adicione?|adicionar|entrou|chegou|recebi|coloca|bota)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
-      if (addMatch) {
-        const rawQty = parseFloat(addMatch[1].replace(",", "."));
-        const rawUnit = addMatch[2] || "g";
-        const name = addMatch[3]?.trim();
-        const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
-        if (name) {
-          const { data: item } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
-          if (!item) { reply = `Nao encontrei "${name}".`; }
-          else {
-            const ns = item.current_stock + rawQty * factor;
-            await supabase.from("insumos").update({ current_stock: ns, last_updated: new Date().toISOString().split("T")[0] }).eq("id", item.id);
-            reply = `+${rawQty * factor} de ${item.name}. Total: ${ns}${item.unit}.`;
-          }
-        }
-      }
-    }
-
-    // REMOVER
-    if (!reply) {
-      const remMatch = lower.match(/(?:gastou?|gastei|usou?|usei|remove?|remover|tirar|baixar|consumiu|perdi)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
-      if (remMatch) {
-        const rawQty = parseFloat(remMatch[1].replace(",", "."));
-        const rawUnit = remMatch[2] || "g";
-        const name = remMatch[3]?.trim();
-        const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
-        if (name) {
-          const { data: item } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
-          if (!item) { reply = `Nao encontrei "${name}".`; }
-          else {
-            const ns = Math.max(0, item.current_stock - rawQty * factor);
-            await supabase.from("insumos").update({ current_stock: ns, last_updated: new Date().toISOString().split("T")[0] }).eq("id", item.id);
-            reply = ns <= 0 ? `${item.name} zerou!` : `-${rawQty * factor} de ${item.name}. Restam ${ns}${item.unit}.`;
-          }
-        }
-      }
-    }
-
-    // CONSULTAR
-    if (!reply) {
-      const qMatch = lower.match(/(?:quanto|qual|estoque|consultar?)\s+(?:tem|tenho|est[aá])?\s*(?:de|do|da)?\s*(.+)/);
-      if (qMatch) {
-        const name = qMatch[1]?.trim();
-        if (name) {
-          const { data: item } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId).ilike("name", `%${name}%`).single();
-          reply = item ? `${item.name}: ${item.current_stock}${item.unit} (min: ${item.min_stock})` : `Nao encontrei "${name}".`;
-        }
-      }
-    }
-
-    // RESUMO
-    if (!reply && /(?:resumo|relat[oó]rio|como\s+(?:est[aá]|t[aá])|dashboard)/i.test(lower)) {
-      const { data: insumos } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId);
-      const { data: produtos } = await supabase.from("products").select("*").eq("tenant_id", tenantId);
-      const total = insumos ? insumos.length : 0;
-      const alerts = insumos ? insumos.filter(i => i.current_stock <= i.min_stock).length : 0;
-      reply = `${total} insumos, ${produtos ? produtos.length : 0} produtos. ${alerts} alertas.`;
-    }
-
-    // ALERTAS
-    if (!reply && /(?:alerta|estoque\s+baixo|cr[ií]tico|zerado|acabou|problema)/i.test(lower)) {
-      const { data: insumos } = await supabase.from("insumos").select("*").eq("tenant_id", tenantId);
-      const empty = insumos ? insumos.filter(i => i.current_stock <= 0) : [];
-      const critical = insumos ? insumos.filter(i => i.current_stock > 0 && i.current_stock <= i.min_stock * 0.5) : [];
-      const low = insumos ? insumos.filter(i => i.current_stock > i.min_stock * 0.5 && i.current_stock <= i.min_stock) : [];
-      reply = empty.length === 0 && critical.length === 0 && low.length === 0
-        ? "Tudo ok, sem alertas."
-        : `${empty.length} zerados, ${critical.length} criticos, ${low.length} baixos.`;
-    }
-
-    if (!reply) reply = "Comandos: cadastrar [nome] [qtd], adicionar [qtd] de [nome], gastar [qtd] de [nome], consultar [nome], resumo, alertas.";
-
-    await sendWhatsApp(sender, reply);
-    return res.sendStatus(200);
-  } catch (e) {
-    console.error("WhatsApp webhook error:", e.message);
-    return res.sendStatus(200);
-  }
+    console.log(`[wp] ${number}: ${text.slice(0, 80)}`);
+    await markRead(number, data?.id || "0");
+    bufferAdd(number, text, flushAndReply);
+  } catch (e) { console.error("[wp] webhook error:", e.message); }
 });
 
 export default app;
