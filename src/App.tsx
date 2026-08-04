@@ -599,12 +599,9 @@ export default function App() {
         fichas={tenantFichas}
         invoices={tenantInvoices}
         tenant={currentTenant}
+        activeTenantId={activeTenantId}
         onNavigate={handleVoiceNavigate}
-        onAddStock={handleVoiceAddStock}
-        onRemoveStock={handleVoiceRemoveStock}
-        onCreateProduct={handleVoiceCreateProduct}
-        onCreateOrder={handleVoiceCreateOrder}
-        onQueryStock={handleVoiceQueryStock}
+        onRefresh={handleRefreshData}
       />
 
     </div>
