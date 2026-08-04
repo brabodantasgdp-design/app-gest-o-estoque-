@@ -17,7 +17,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { Insumo, InvoiceScan, InvoiceItem, CurrencyType } from '../types';
-import { SAMPLE_INVOICES } from '../data/mockData';
+import { invoicesService } from '../lib/database';
 
 interface InvoiceOCRModuleProps {
   insumos: Insumo[];
@@ -33,7 +33,7 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
   activeTenantId,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [activeScan, setActiveScan] = useState<InvoiceScan | null>(SAMPLE_INVOICES[0]);
+  const [activeScan, setActiveScan] = useState<InvoiceScan | null>(null);
   const [processedLog, setProcessedLog] = useState<InvoiceScan[]>([]);
   const [selectedImageBase64, setSelectedImageBase64] = useState<string | null>(null);
 

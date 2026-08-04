@@ -602,14 +602,9 @@ export default function App() {
         onNavigate={handleVoiceNavigate}
         onAddStock={handleVoiceAddStock}
         onRemoveStock={handleVoiceRemoveStock}
-        onCreateInsumo={handleVoiceCreateInsumo}
-        onDeleteInsumo={handleVoiceDeleteInsumo}
         onCreateProduct={handleVoiceCreateProduct}
-        onUpdateProduct={handleVoiceUpdateProduct}
-        onDeleteProduct={handleVoiceDeleteProduct}
         onCreateOrder={handleVoiceCreateOrder}
         onQueryStock={handleVoiceQueryStock}
-        onGetDashboardSummary={handleVoiceGetDashboardSummary}
       />
 
     </div>
