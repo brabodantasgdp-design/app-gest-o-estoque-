@@ -369,20 +369,27 @@ export class LiveAgent {
   }
 
   private async sendTextSmart(text: string) {
-    // Tenta semântico primeiro, fallback pra regex
     let tool = "";
     let args: Record<string, any> = {};
 
     try {
       const match = await matchIntent(text);
       if (match) {
-        tool = match.intent;
-        // Extrai parâmetros com regex (nomes, quantidades, preços)
+        // Mapeia intent semantica → tool interna
+        const map: Record<string, string> = {
+          register_insumo: "inventory_register",
+          add_stock: "inventory_add",
+          remove_stock: "inventory_remove",
+          query_stock: "inventory_query",
+          report: "report_summary",
+          alert: "inventory_alert",
+          create_product: "product_create",
+        };
+        tool = map[match.intent] || "";
         args = this.extractArgs(text);
       }
     } catch {}
 
-    // Fallback: regex parser (já expandido)
     if (!tool) {
       const parsed = this.localParse(text);
       tool = parsed.tool;
