@@ -148,6 +148,18 @@ export default function App() {
   const lowStockCount = tenantInsumos.filter((i) => i.currentStock <= i.minStock).length;
   const isSuperAdmin = currentUser?.role === 'super_admin';
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "n") { e.preventDefault(); setActiveTab("insumos"); }
+      if (e.ctrlKey && e.key === "p") { e.preventDefault(); setActiveTab("products"); }
+      if (e.ctrlKey && e.key === "d") { e.preventDefault(); setActiveTab("dashboard"); }
+      if (e.ctrlKey && e.key === "o") { e.preventDefault(); setActiveTab("orders"); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const handleLoginSuccess = useCallback((user: User) => {
     setCurrentUser(user);
     if (user.tenantId) {
@@ -365,8 +377,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0B0C] text-zinc-100 font-sans antialiased selection:bg-amber-500 selection:text-black">
-      
+      <div className="min-h-screen bg-[#0B0B0C] text-zinc-100 font-sans antialiased selection:bg-amber-500 selection:text-black">
+        {/* Low stock toast */}
+        {lowStockCount > 0 && (
+          <div className="fixed top-4 right-4 z-[200] bg-red-950/95 backdrop-blur-md border border-red-700/50 rounded-xl px-4 py-3 shadow-2xl shadow-red-900/30 max-w-[300px] text-xs animate-in slide-in-from-top-2">
+            <span className="font-extrabold text-red-400 text-[10px] uppercase tracking-wider">Atenção</span>
+            <p className="mt-0.5 text-red-300">{lowStockCount} {lowStockCount === 1 ? 'insumo está' : 'insumos estão'} com estoque baixo. Verifique no módulo de Insumos.</p>
+          </div>
+        )}
+        
       <Header
         currency={currency}
         setCurrency={setCurrency}

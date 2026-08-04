@@ -216,6 +216,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Main Charts & Analytics Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         
+        {/* Donut Chart */}
+        {totalGasto > 0 && (() => {
+          const c = { alimentacao: "#f59e0b", transporte: "#3b82f6", servicos: "#8b5cf6", insumos: "#22c55e", impostos: "#ef4444", outros: "#6b7280" };
+          const e = Object.entries(categoryTotals).filter(([_, v]) => v > 0);
+          let cum = 0;
+          const p = e.map(([k, v]) => { const pct = v/totalGasto, sa = cum*Math.PI*2; cum+=pct; const ea=cum*Math.PI*2, r=35, cx=40, cy=40; const x1=cx+r*Math.sin(sa), y1=cy-r*Math.cos(sa), x2=cx+r*Math.sin(ea), y2=cy-r*Math.cos(ea); return `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${pct>.5?1:0},1 ${x2},${y2} Z" fill="${c[k]||'#6b7280'}" opacity=".9"/>`; });
+          return (
+            <div className="p-4 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-3">
+              <h2 className="text-sm font-extrabold text-white flex items-center gap-2"><PieChart className="w-4 h-4 text-amber-500"/> Distribuição</h2>
+              <div className="flex items-center gap-3">
+                <svg viewBox="0 0 80 80" className="w-16 h-16 shrink-0" dangerouslySetInnerHTML={{ __html: p.join("") + '<circle cx="40" cy="40" r="18" fill="#121214"/>' }}/>
+                <div className="space-y-1 text-[10px]">{e.map(([k,v]) => (<div key={k} className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{background:c[k]||"#6b7280"}}/><span className="text-zinc-400">{categoryLabels[k]?.label||k}</span><span className="text-white font-bold ml-auto">{((v/totalGasto)*100).toFixed(0)}%</span></div>))}</div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Gastos por Categoria - Gráfico de Barras */}
         <div className="lg:col-span-2 p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-6">
           <div className="flex items-center justify-between">
