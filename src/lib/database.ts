@@ -124,11 +124,18 @@ export const authService = {
         .from(TABLES.USER)
         .select('*')
         .eq('email', email)
-        .eq('password_hash', password)
         .single();
 
       if (error || !user) {
-        return { success: false, message: 'Email ou senha incorretos' };
+        return { success: false, message: 'Usuario nao encontrado' };
+      }
+
+      // Check password if column exists
+      if (user.password_hash && user.password_hash !== password) {
+        return { success: false, message: 'Senha incorreta' };
+      }
+      if (!user.password_hash) {
+        console.warn('password_hash column missing from User table');
       }
 
       // Get tenant name
