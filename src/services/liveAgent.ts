@@ -353,6 +353,52 @@ export class LiveAgent {
   // TEXT-TO-SPEECH
   // ============================================================
 
+  // ============================================================
+  // TEXT INPUT
+  // ============================================================
+
+  async sendText(text: string) {
+    this.update({ status: "thinking", transcript: text });
+    try {
+      const res = await fetch("/api/ebdAi/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }], systemInstruction: SYSTEM_PROMPT, tools: TOOLS }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Server ${res.status}`); }
+      const data = await res.json();
+      let responseText = data.text || "";
+      const functionCalls: any[] = data.functionCalls || [];
+
+      const results: any[] = [];
+      for (const fc of functionCalls) {
+        try { results.push({ name: fc.name, result: await this.executeTool(fc.name, fc.args || {}) }); this.update({ lastAction: fc.name }); }
+        catch (err: any) { results.push({ name: fc.name, error: err.message }); }
+      }
+
+      if (results.length > 0) {
+        const res2 = await fetch("/api/ebdAi/agent", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              { role: "user", parts: [{ text }] },
+              ...functionCalls.map((fc: any) => ({ role: "model", parts: [{ functionCall: fc }] })),
+              { role: "user", parts: results.map((r: any) => ({ functionResponse: { name: r.name, response: r.error ? { error: r.error } : { result: r.result } } })) },
+            ],
+            systemInstruction: SYSTEM_PROMPT,
+          }),
+        });
+        if (res2.ok) responseText = (await res2.json()).text || this.formatResult(results);
+        else responseText = this.formatResult(results);
+      }
+
+      if (responseText) { this.update({ response: responseText }); this.speak(responseText); }
+    } catch (err: any) {
+      this.update({ status: "error", error: err.message });
+    }
+    this.update({ status: "idle" });
+  }
+
   speak(text: string) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();

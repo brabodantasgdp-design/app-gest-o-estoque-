@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { createLiveAgent, type LiveAgent, type LiveAgentState, type SupabaseContext } from "../services/liveAgent";
 import { insumosService, productsService } from "../lib/database";
-import { Mic, Loader2, Volume2 } from "lucide-react";
+import { Mic, Loader2, Volume2, Send, MessageSquare } from "lucide-react";
 
 interface Props {
   tenantId: string | null;
@@ -16,8 +16,11 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
   });
   const [showResponse, setShowResponse] = React.useState(false);
   const [showAlert, setShowAlert] = React.useState(false);
+  const [showChat, setShowChat] = React.useState(false);
+  const [chatInput, setChatInput] = React.useState("");
   const responseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const alertTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const buildContext = useCallback((): SupabaseContext | null => {
     if (!tenantId) return null;
@@ -74,6 +77,14 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
       alertTimer.current = setTimeout(() => setShowAlert(false), 10000);
     }
   }, [state.proactiveAlert]);
+
+  const handleSend = () => {
+    if (!chatInput.trim() || !agentRef.current) return;
+    agentRef.current.sendText(chatInput.trim());
+    setChatInput("");
+  };
+
+  const toggleChat = () => setShowChat((v) => !v);
 
   const toggleMic = () => {
     const agent = agentRef.current;
@@ -152,6 +163,33 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
          state.status === "error" ? "erro" :
          "EBD"}
       </span>
+
+      {/* Chat input */}
+      {showChat && (
+        <div className="flex items-center gap-1 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/40 rounded-full px-2 py-1 shadow-xl">
+          <input
+            ref={inputRef}
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Escreva um comando..."
+            className="bg-transparent text-xs text-zinc-200 outline-none w-[180px] placeholder-zinc-600"
+            disabled={state.status === "thinking"}
+          />
+          <button onClick={handleSend} disabled={state.status === "thinking"} className="text-amber-400 hover:text-amber-300 disabled:opacity-30">
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Chat toggle button */}
+      <button
+        onClick={toggleChat}
+        className="w-7 h-7 rounded-full bg-zinc-900/80 border border-zinc-700/40 flex items-center justify-center cursor-pointer hover:border-amber-500/30 transition-colors"
+        title="Escrever comando"
+      >
+        <MessageSquare className="w-3 h-3 text-zinc-500" />
+      </button>
     </div>
   );
 };
