@@ -148,7 +148,7 @@ export function aiRoutes(): Router {
       const ai = new GoogleGenAI({ apiKey });
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: messages.map((m: any) => ({
           role: m.role === 'assistant' ? 'model' : 'user',
           parts: [{ text: m.content }],
@@ -167,7 +167,7 @@ export function aiRoutes(): Router {
       return res.json({
         success: true, response: responseText,
         functionCalls: functionCalls || [],
-        source: 'gemini_ai', model: 'gemini-2.5-flash',
+        source: 'gemini_ai', model: 'gemini-1.5-flash',
         timestamp: new Date().toISOString(),
       });
 
@@ -220,7 +220,7 @@ Contexto do sistema: ${JSON.stringify(context || {})}`;
       const ai = new GoogleGenAI({ apiKey });
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: [{ role: 'user', parts: [{ text: fullContext }] }],
         config: {
           systemInstruction: `Você é a EBD AI processando comandos de voz.
@@ -274,7 +274,7 @@ Analise o comando e retorne JSON com:
       const ai = new GoogleGenAI({ apiKey });
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents,
         config: {
           systemInstruction: systemInstruction || undefined,
