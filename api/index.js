@@ -72,7 +72,7 @@ app.post("/api/ebdAi/agent", async (req, res) => {
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
+      model: "gemini-2.5-flash-preview-05-20",
       contents,
       config: { systemInstruction, tools, temperature: 0.7, maxOutputTokens: 512 },
     });
