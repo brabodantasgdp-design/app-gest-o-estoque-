@@ -1,186 +1,125 @@
-// ============================================
-// CONVERSATIONAL STATE MACHINE
-// ============================================
-
 export interface ConversationState {
-  step: string;
+  intent: string;
+  step: number;
   data: Record<string, any>;
+  awaitingInput: string;
 }
 
-export interface ConversationResponse {
+interface ConversationResponse {
+  state: ConversationState | null;
   message: string;
-  state: ConversationState | null; // null = finished
-  action?: () => Promise<void>;
 }
 
-export function startConversation(type: string): ConversationResponse {
-  switch (type) {
-    case 'create_insumo':
-      return {
-        message: 'Vamos criar um insumo! Qual o nome?',
-        state: { step: 'ask_name', data: {} },
-      };
-    case 'create_product':
-      return {
-        message: 'Vamos criar um produto! Qual o nome?',
-        state: { step: 'ask_name', data: {} },
-      };
-    case 'create_order':
-      return {
-        message: 'Vamos criar um pedido! Qual o nome do cliente?',
-        state: { step: 'ask_customer', data: {} },
-      };
-    default:
-      return {
-        message: 'O que você quer fazer?',
-        state: null,
-      };
-  }
-}
+const INTENTS = {
+  'criar insumo': { steps: ['name', 'quantity', 'unit', 'cost'] },
+  'criar produto': { steps: ['name', 'price'] },
+  'criar pedido': { steps: ['customer', 'product', 'quantity'] },
+  'adicionar estoque': { steps: ['item', 'quantity'] },
+  'remover estoque': { steps: ['item', 'quantity'] },
+  'consultar': { steps: ['item'] },
+  'relatório': { steps: ['type'] },
+};
 
-export function processConversationStep(
-  state: ConversationState,
-  input: string
-): ConversationResponse {
-  const lower = input.toLowerCase().trim();
-
-  // ============================================
-  // CRIAR INSUMO
-  // ============================================
-  if (state.step === 'ask_name') {
-    return {
-      message: `Beleza, ${input}! Qual a quantidade?`,
-      state: { step: 'ask_quantity', data: { ...state.data, name: input } },
-    };
-  }
-
-  if (state.step === 'ask_quantity') {
-    const qtyMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*(g|gramas|kg|quilos|ml|litros|l|un|unidades)?/);
-    if (qtyMatch) {
-      let qty = parseFloat(qtyMatch[1].replace(',', '.'));
-      let unit = 'g';
-      
-      if (qtyMatch[2]) {
-        const u = qtyMatch[2];
-        if (u.includes('kg') || u.includes('quilo')) { qty *= 1000; unit = 'g'; }
-        else if (u.includes('l') || u.includes('litro')) { qty *= 1000; unit = 'ml'; }
-        else if (u.includes('ml')) unit = 'ml';
-        else if (u.includes('un')) unit = 'un';
-      }
-      
-      return {
-        message: `${qty}${unit}. Qual o custo total? (ou "pular")`,
-        state: { step: 'ask_cost', data: { ...state.data, quantity: qty, unit } },
-      };
-    }
-    return {
-      message: 'Não entendi a quantidade. Ex: "5 quilos", "500g", "10 unidades"',
-      state,
-    };
-  }
-
-  if (state.step === 'ask_cost') {
-    if (lower === 'pular' || lower === 'sem custo' || lower === '0') {
-      return {
-        message: `✓ Criado: ${state.data.name} (${state.data.quantity}${state.data.unit})`,
-        state: null,
-        action: async () => {
-          // Will be handled by caller
-        },
-      };
-    }
-    
-    const costMatch = lower.match(/r\$\s*(\d+(?:[.,]\d+)?)/);
-    if (costMatch || !isNaN(parseFloat(input.replace(',', '.')))) {
-      const cost = costMatch ? parseFloat(costMatch[1].replace(',', '.')) : parseFloat(input.replace(',', '.'));
-      return {
-        message: `✓ Criado: ${state.data.name} - ${state.data.quantity}${state.data.unit} - R$${cost}`,
-        state: null,
-        action: async () => {
-          // Will be handled by caller
-        },
-      };
-    }
-    
-    return {
-      message: 'Qual o custo? Ex: "R$50", "40 reais" ou "pular"',
-      state,
-    };
-  }
-
-  // ============================================
-  // CRIAR PRODUTO
-  // ============================================
-  if (state.step === 'ask_name' && state.data.type === 'product') {
-    return {
-      message: `Produto ${input}! Qual o preço de venda?`,
-      state: { step: 'ask_price', data: { ...state.data, name: input } },
-    };
-  }
-
-  if (state.step === 'ask_price') {
-    const priceMatch = lower.match(/r\$\s*(\d+(?:[.,]\d+)?)/);
-    if (priceMatch || !isNaN(parseFloat(input.replace(',', '.')))) {
-      const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : parseFloat(input.replace(',', '.'));
-      return {
-        message: `✓ Criado: ${state.data.name} por R$${price}`,
-        state: null,
-        action: async () => {},
-      };
-    }
-    return {
-      message: 'Qual o preço? Ex: "R$25", "30 reais"',
-      state,
-    };
-  }
-
-  // ============================================
-  // CRIAR PEDIDO
-  // ============================================
-  if (state.step === 'ask_customer') {
-    return {
-      message: `Pedido para ${input}! Qual o produto?`,
-      state: { step: 'ask_product', data: { ...state.data, customer: input } },
-    };
-  }
-
-  if (state.step === 'ask_product') {
-    return {
-      message: `${input}! Quantas unidades?`,
-      state: { step: 'ask_quantity', data: { ...state.data, product: input } },
-    };
-  }
-
-  if (state.step === 'ask_quantity' && state.data.customer) {
-    const qtyMatch = lower.match(/(\d+)/);
-    const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-    
-    return {
-      message: `✓ Pedido: ${state.data.customer} - ${state.data.product} x${qty}`,
-      state: null,
-      action: async () => {},
-    };
-  }
-
-  return {
-    message: 'Não entendi. Pode repetir?',
-    state,
-  };
-}
-
-// Detect intent from free text
 export function detectIntent(text: string): string | null {
   const lower = text.toLowerCase();
   
-  if (lower.includes('criar insumo') || lower.includes('novo insumo') || lower.includes('cadastrar insumo') || lower.includes('adicionar insumo')) {
-    return 'create_insumo';
-  }
-  if (lower.includes('criar produto') || lower.includes('novo produto') || lower.includes('cadastrar produto')) {
-    return 'create_product';
-  }
-  if (lower.includes('criar pedido') || lower.includes('novo pedido') || lower.includes('abrir pedido')) {
-    return 'create_order';
-  }
+  if (/\b(criar?|cadastrar?|adicionar?|novo?)\s+(insumo|ingrediente|matéria)/i.test(lower)) return 'criar insumo';
+  if (/\b(criar?|cadastrar?|novo?)\s+(produto|item|cardápio)/i.test(lower)) return 'criar produto';
+  if (/\b(criar?|fazer?|novo?)\s+(pedido|comanda|ordem)/i.test(lower)) return 'criar pedido';
+  if (/\b(adicionar?|adicionar?|entrar?|chegou?|receber?)\s+(estoque|estoque)/i.test(lower)) return 'adicionar estoque';
+  if (/\b(remover?|tirar?|sair?|gastar?|usar?)\s+(estoque|estoque)/i.test(lower)) return 'remover estoque';
+  if (/\b(consultar?|verificar?|checar?|quanto\s+tenho)/i.test(lower)) return 'consultar';
+  if (/\b(relatório?|resumo?|vendas?|faturamento?)/i.test(lower)) return 'relatório';
   
   return null;
+}
+
+export function startConversation(intent: string): ConversationResponse {
+  const state: ConversationState = { intent, step: 0, data: {}, awaitingInput: '' };
+  
+  return processConversationStep(state, '');
+}
+
+export function processConversationStep(state: ConversationState, input: string): ConversationResponse {
+  const intentConfig = INTENTS[state.intent as keyof typeof INTENTS];
+  if (!intentConfig) {
+    return { state: null, message: 'Desculpe, não entendi o que você quer fazer.' };
+  }
+
+  // Process current step
+  if (state.step > 0 && input.trim()) {
+    state.data[intentConfig.steps[state.step - 1]] = input.trim();
+  }
+
+  const currentStep = intentConfig.steps[state.step];
+  
+  // Check if conversation is complete
+  if (!currentStep) {
+    return { state: null, message: generateCompletionMessage(state) };
+  }
+
+  // Ask for next input
+  const prompts: Record<string, string> = {
+    name: '📝 Qual o nome?',
+    quantity: '📊 Qual a quantidade? (ex: 5 kg, 500g, 10 un)',
+    unit: '📏 Qual a unidade? (kg, g, L, un, cx)',
+    cost: '💰 Qual o custo total? (ex: R$ 50)',
+    price: '🏷️ Qual o preço de venda?',
+    customer: '👤 Qual o nome do cliente?',
+    product: '📦 Qual o produto?',
+    item: '📦 Qual item?',
+    type: '📊 Qual tipo? (vendas, estoque, lucro)',
+  };
+
+  state.step++;
+  
+  const progress = `[${state.step}/${intentConfig.steps.length}]`;
+  const prompt = prompts[currentStep] || 'Qual a informação?';
+  
+  let message = '';
+  if (state.step === 1) {
+    message = `Vamos começar! ${prompt}`;
+  } else {
+    message = `${progress} ${prompt}`;
+    
+    // Show what we have so far
+    const summary = Object.entries(state.data)
+      .map(([key, value]) => `• ${key}: ${value}`)
+      .join('\n');
+    if (summary) {
+      message += `\n\nO que tenho até agora:\n${summary}`;
+    }
+  }
+
+  return { state, message };
+}
+
+function generateCompletionMessage(state: ConversationState): string {
+  const d = state.data;
+  
+  switch (state.intent) {
+    case 'criar insumo':
+      return `✅ Criando insumo:\n• Nome: ${d.name}\n• Quantidade: ${d.quantity} ${d.unit || 'un'}\n• Custo: R$ ${d.cost || '0'}\n\nPronto! O item foi criado no sistema.`;
+    
+    case 'criar produto':
+      return `✅ Criando produto:\n• Nome: ${d.name}\n• Preço: R$ ${d.price}\n\nProduto adicionado ao cardápio!`;
+    
+    case 'criar pedido':
+      return `✅ Criando pedido:\n• Cliente: ${d.customer}\n• Produto: ${d.product}\n• Quantidade: ${d.quantity || 1}\n\nPedido registrado!`;
+    
+    case 'adicionar estoque':
+      return `✅ Adicionando ao estoque:\n• Item: ${d.item}\n• Quantidade: ${d.quantity}\n\nEstoque atualizado!`;
+    
+    case 'remover estoque':
+      return `✅ Removendo do estoque:\n• Item: ${d.item}\n• Quantidade: ${d.quantity}\n\nEstoque atualizado!`;
+    
+    case 'consultar':
+      return `🔍 Vou verificar "${d.item}" no sistema.`;
+    
+    case 'relatório':
+      return `📊 Gerando relatório de ${d.type || 'vendas'}...`;
+    
+    default:
+      return '✅ Processo concluído!';
+  }
 }
