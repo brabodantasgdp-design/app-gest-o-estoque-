@@ -369,42 +369,51 @@ export class LiveAgent {
   private async sendTextLocal(text: string) {
     const parsed = this.localParse(text);
     if (parsed.tool === "unknown") {
-      this.speak("Nao entendi. Tente: cadastrar, adicionar, remover, resumo ou alertas.");
-      return;
+      const msg = "Não entendi. O que posso fazer:\n\n• cadastrar [nome] [qtd]\n• adicionar [qtd] de [nome]\n• gastar [qtd] de [nome]\n• consultar [nome]\n• resumo\n• alertas\n• criar produto [nome] preço [valor]";
+      this.update({ response: msg }); this.speak(msg); return;
     }
     try {
       const result = await this.executeTool(parsed.tool, parsed.args);
       const msg = this.formatResultDirect(parsed.tool, result);
-      this.update({ lastAction: parsed.tool, response: msg });
-      this.speak(msg);
+      this.update({ lastAction: parsed.tool, response: msg }); this.speak(msg);
     } catch (err: any) {
-      this.speak("Erro: " + err.message);
+      const msg = "Erro: " + err.message;
+      this.update({ response: msg }); this.speak(msg);
     }
   }
 
   private localParse(text: string): { tool: string; args: Record<string, any> } {
     const lower = text.toLowerCase().trim();
 
-    const regMatch = lower.match(/(?:cadastrar?|cria|novo)\s+(?:insumo|item|ingrediente)?\s*(.+?)(?:\s+(\d+[\\.,]?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[cc]o|custo|a|por)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
+    // CADASTRAR INSUMO: "cadastrar farinha 500g", "add insumo açúcar 2kg", "novo item leite", "incluir café", "quero cadastrar arroz", "cria insumo feijão"
+    const regMatch = lower.match(/(?:cadastrar?|criar?|cria|novo|add|adicionar\s+novo|incluir|quero\s+cadastrar|quero\s+add|quero\s+criar)\s+(?:insumo|item|ingrediente)?\s*(.+?)(?:\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[çc]o|custo|a|por|valor)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
     if (regMatch) {
       return { tool: "inventory_register", args: { name: regMatch[1].trim(), quantity: 0, unit: "g", unitCost: 0 } };
     }
 
-    const addMatch = lower.match(/(?:adicione?|adicionar|entrou|chegou|recebi|coloca|bota|somou?)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+    // ADICIONAR: "adicionar 5kg de farinha", "entrou 200g açúcar", "chegou 1L leite", "add 500g farinha", "mais 2kg açúcar", "coloca 1kg arroz"
+    const addMatch = lower.match(/(?:adicione?|adicionar|entrou|chegou|recebi|coloca|bota|somou?|add|mais|acrescentar|acrescenta)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
     if (addMatch) return { tool: "inventory_add", args: { item_name: addMatch[3].trim(), quantity: parseFloat(addMatch[1].replace(",", ".")) * 1 } };
 
-    const remMatch = lower.match(/(?:gastou?|gastei|usou?|usei|remove?|remover|tirar|baixar|diminuir|consumiu|perdi|saiu)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+    // REMOVER: "gastei 200g farinha", "usei 1L leite", "remove 500g açúcar", "tira 100g", "menos 200g", "consumiu 1kg"
+    const remMatch = lower.match(/(?:gastou?|gastei|usou?|usei|remove?|remover|tirar|tira|baixar|diminuir|consumiu|perdi|saiu|menos|subtrair)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
     if (remMatch) return { tool: "inventory_remove", args: { item_name: remMatch[3].trim(), quantity: parseFloat(remMatch[1].replace(",", ".")) * 1 } };
 
-    const qMatch = lower.match(/(?:quanto|qual|estoque|consultar?)\s+(?:tem|tenho|est[aá])?\s*(?:de|do|da)?\s*(.+)/);
+    // CONSULTAR: "quanto tem de farinha", "estoque de açúcar", "ver café", "consulta arroz", "mostra feijão", "qual estoque"
+    const qMatch = lower.match(/(?:quanto|qual|estoque|consultar?|ver|mostrar?|mostra|exibir|checar|olhar?)\s+(?:tem|tenho|est[aá]|o\s+estoque\s+de)?\s*(?:de|do|da)?\s*(.+)/);
     if (qMatch) return { tool: "inventory_query", args: { item_name: qMatch[1].trim() } };
 
-    if (/(?:resumo|relat[oó]rio|como\s+(?:est[aá]|t[aá])|dashboard|vis[aã]o\s+geral)/i.test(lower)) return { tool: "report_summary", args: {} };
-    if (/(?:alerta|estoque\s+baixo|cr[ií]tico|zerado|acabou|problema)/i.test(lower)) return { tool: "inventory_alert", args: {} };
+    // RESUMO: "resumo", "como tá", "relatório", "visão geral", "status"
+    if (/(?:resumo|relat[oó]rio|como\s+(?:est[aá]|t[aá])|dashboard|vis[aã]o\s+geral|status|situa[cç][aã]o)/i.test(lower)) return { tool: "report_summary", args: {} };
 
-    const prodMatch = lower.match(/(?:criar?|cria|cadastrar?)\s+(?:produto|prod|item)\s+(.+?)(?:\s+(?:pre[cc]o|por|a)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
+    // ALERTAS: "alerta", "estoque baixo", "problema", "crítico", "zerado"
+    if (/(?:alerta|estoque\s+baixo|cr[ií]tico|zerado|acabou|problema|sem\s+estoque|faltando)/i.test(lower)) return { tool: "inventory_alert", args: {} };
+
+    // CRIAR PRODUTO
+    const prodMatch = lower.match(/(?:criar?|cria|cadastrar?|add|novo)\s+(?:produto|prod|item)\s+(.+?)(?:\s+(?:pre[çc]o|por|a|valor)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
     if (prodMatch) return { tool: "product_create", args: { name: prodMatch[1].trim(), price: prodMatch[2] ? parseFloat(prodMatch[2].replace(",", ".")) : 0 } };
 
+    // Se chegou aqui, retorna unknown - o handler vai mostrar a ajuda
     return { tool: "unknown", args: {} };
   }
 

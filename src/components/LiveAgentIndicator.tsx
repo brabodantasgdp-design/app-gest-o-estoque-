@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { createLiveAgent, type LiveAgent, type LiveAgentState, type SupabaseContext } from "../services/liveAgent";
 import { insumosService, productsService } from "../lib/database";
-import { Mic, Loader2, Volume2, Send, MessageSquare, X, Sparkles, Check, AlertTriangle, Zap } from "lucide-react";
+import { Loader2, Send, X, Sparkles, Zap, Bot, AlertTriangle } from "lucide-react";
 
 interface Props {
   tenantId: string | null;
@@ -24,7 +24,7 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
   const [chatInput, setChatInput] = React.useState("");
   const [messages, setMessages] = React.useState<ChatMsg[]>([]);
   const [showAlert, setShowAlert] = React.useState(false);
-  const alertTimer = useRef<ReturnType<typeof setTimeout>>();
+  const alertTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const messagesEnd = useRef<HTMLDivElement | null>(null);
 
   const buildContext = useCallback((): SupabaseContext | null => {
@@ -96,29 +96,6 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
     }
   };
 
-  const toggleMic = async () => {
-    const agent = agentRef.current;
-    if (!agent) return;
-    if (state.status === "listening") {
-      agent.stopListening();
-    } else {
-      await agent.startListening();
-    }
-    // Quando o audio terminar, captura a resposta
-    setTimeout(async () => {
-      let attempts = 0;
-      while (attempts < 80) {
-        const s = agentRef.current?.state;
-        if (s?.response) {
-          setMessages((m) => [...m, { role: "ebd", text: s.response!, time: Date.now() }]);
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 100));
-        attempts++;
-      }
-    }, 1000);
-  };
-
   return (
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-1.5">
       {/* Proactive alert */}
@@ -177,27 +154,11 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
                 <div className="bg-zinc-900 text-zinc-500 px-3 py-2 rounded-xl rounded-bl-sm border border-zinc-800 text-[10px] italic">pensando...</div>
               </div>
             )}
-            {state.status === "listening" && (
-              <div className="flex justify-start">
-                <div className="bg-amber-500/10 text-amber-400 px-3 py-2 rounded-xl rounded-bl-sm border border-amber-500/20 text-[10px] flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> ouvindo...
-                </div>
-              </div>
-            )}
             <div ref={messagesEnd} />
           </div>
 
           {/* Input */}
           <div className="border-t border-zinc-800 p-2.5 flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={toggleMic}
-              className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer transition-all ${
-                state.status === "listening" ? "bg-amber-500/20 border border-amber-500/40" : "bg-zinc-800 border border-zinc-700/50 hover:border-amber-500/30"
-              }`}
-              title="Falar com microfone"
-            >
-              {state.status === "listening" ? <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" /> : <Mic className="w-3.5 h-3.5 text-zinc-400" />}
-            </button>
             <input
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
