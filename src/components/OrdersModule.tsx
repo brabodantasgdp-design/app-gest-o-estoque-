@@ -85,7 +85,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ orders, setOrders, c
 
     if (editingOrder) {
       try {
-        await ordersService.updateStatus(editingOrder.id, status);
+        await ordersService.updateStatus(editingOrder.id, status, activeTenantId);
         await onRefresh();
       } catch (err) {
         console.error('Error updating order:', err);
@@ -131,7 +131,7 @@ export const OrdersModule: React.FC<OrdersModuleProps> = ({ orders, setOrders, c
 
   const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
     try {
-      await ordersService.updateStatus(orderId, newStatus);
+      await ordersService.updateStatus(orderId, newStatus, activeTenantId);
       await onRefresh();
     } catch (err) {
       console.error('Error updating status:', err);

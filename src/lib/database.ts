@@ -5,16 +5,16 @@ import type { Tenant, Insumo, FichaTecnica, Product, Order, InvoiceScan, User, R
 // TABLE NAMES (PascalCase for Supabase)
 // ============================================
 const TABLES = {
-  TENANT: 'Tenant',
-  INSUMO: 'Insumo',
-  FICHA: 'FichaTecnica',
-  RECIPE_INGREDIENT: 'RecipeIngredient',
-  PRODUCT: 'Product',
-  ORDER: 'Order',
-  ORDER_ITEM: 'OrderItem',
-  INVOICE: 'Invoice',
-  INVOICE_ITEM: 'InvoiceItem',
-  USER: 'User',
+  TENANT: 'tenants',
+  INSUMO: 'insumos',
+  FICHA: 'fichas_tecnicas',
+  RECIPE_INGREDIENT: 'recipe_ingredients',
+  PRODUCT: 'products',
+  ORDER: 'orders',
+  ORDER_ITEM: 'order_items',
+  INVOICE: 'invoices',
+  INVOICE_ITEM: 'invoice_items',
+  USER: 'users',
 };
 
 // ============================================
@@ -374,7 +374,7 @@ export const insumosService = {
       unit_cost: updates.unitCost,
       supplier: updates.supplier,
       last_updated: updates.lastUpdated,
-    }).eq('id', id).select().single();
+    }).eq('id', id).eq('tenant_id', (updates as any).tenantId).select().single();
     if (error) {
       console.error('insumosService.update error:', error);
       throw error;
@@ -388,7 +388,9 @@ export const insumosService = {
       saveLocal('ebd_insumos', all.filter(i => i.id !== id));
       return;
     }
-    const { error } = await supabase.from(TABLES.INSUMO).delete().eq('id', id);
+    const { data: record } = await supabase.from(TABLES.INSUMO).select('tenant_id').eq('id', id).single();
+    if (!record) return;
+    const { error } = await supabase.from(TABLES.INSUMO).delete().eq('id', id).eq('tenant_id', record.tenant_id);
     if (error) throw error;
   },
 };
@@ -522,7 +524,7 @@ export const fichasService = {
       final_price: updates.finalPrice,
       net_profit_per_unit: updates.netProfitPerUnit,
       profit_margin_rate: updates.profitMarginRate,
-    }).eq('id', id).select().single();
+    }).eq('id', id).eq('tenant_id', (updates as any).tenantId).select().single();
     if (error) throw error;
     return data;
   },
@@ -533,7 +535,9 @@ export const fichasService = {
       saveLocal('ebd_fichas', all.filter(f => f.id !== id));
       return;
     }
-    const { error } = await supabase.from(TABLES.FICHA).delete().eq('id', id);
+    const { data: record } = await supabase.from(TABLES.FICHA).select('tenant_id').eq('id', id).single();
+    if (!record) return;
+    const { error } = await supabase.from(TABLES.FICHA).delete().eq('id', id).eq('tenant_id', record.tenant_id);
     if (error) throw error;
   },
 };
@@ -620,7 +624,7 @@ export const productsService = {
       stock_quantity: updates.stockQuantity,
       new_price: updates.newPrice,
       status: updates.status,
-    }).eq('id', id).select().single();
+    }).eq('id', id).eq('tenant_id', (updates as any).tenantId).select().single();
     if (error) throw error;
     return data;
   },
@@ -631,7 +635,9 @@ export const productsService = {
       saveLocal('ebd_products', all.filter(p => p.id !== id));
       return;
     }
-    const { error } = await supabase.from(TABLES.PRODUCT).delete().eq('id', id);
+    const { data: record } = await supabase.from(TABLES.PRODUCT).select('tenant_id').eq('id', id).single();
+    if (!record) return;
+    const { error } = await supabase.from(TABLES.PRODUCT).delete().eq('id', id).eq('tenant_id', record.tenant_id);
     if (error) throw error;
   },
 };
@@ -716,14 +722,14 @@ export const ordersService = {
     return orderData;
   },
 
-  async updateStatus(id: string, status: Order['status']) {
+  async updateStatus(id: string, status: Order['status'], tenantId: string) {
     if (!isConfigured) {
       const all = loadLocal<Order>('ebd_orders');
       const idx = all.findIndex(o => o.id === id);
       if (idx >= 0) { all[idx] = { ...all[idx], status }; saveLocal('ebd_orders', all); }
       return all[idx];
     }
-    const { data, error } = await supabase.from(TABLES.ORDER).update({ status }).eq('id', id).select().single();
+    const { data, error } = await supabase.from(TABLES.ORDER).update({ status }).eq('id', id).eq('tenant_id', tenantId).select().single();
     if (error) throw error;
     return data;
   },
@@ -734,7 +740,9 @@ export const ordersService = {
       saveLocal('ebd_orders', all.filter(o => o.id !== id));
       return;
     }
-    const { error } = await supabase.from(TABLES.ORDER).delete().eq('id', id);
+    const { data: record } = await supabase.from(TABLES.ORDER).select('tenant_id').eq('id', id).single();
+    if (!record) return;
+    const { error } = await supabase.from(TABLES.ORDER).delete().eq('id', id).eq('tenant_id', record.tenant_id);
     if (error) throw error;
   },
 };
@@ -846,7 +854,7 @@ export const invoicesService = {
     const { data, error } = await supabase.from(TABLES.INVOICE).update({
       processed: updates.processed,
       processed_at: updates.processedAt,
-    }).eq('id', id).select().single();
+    }).eq('id', id).eq('tenant_id', (updates as any).tenantId).select().single();
     if (error) throw error;
     return data;
   },
@@ -857,7 +865,9 @@ export const invoicesService = {
       saveLocal('ebd_invoices', all.filter(i => i.id !== id));
       return;
     }
-    const { error } = await supabase.from(TABLES.INVOICE).delete().eq('id', id);
+    const { data: record } = await supabase.from(TABLES.INVOICE).select('tenant_id').eq('id', id).single();
+    if (!record) return;
+    const { error } = await supabase.from(TABLES.INVOICE).delete().eq('id', id).eq('tenant_id', record.tenant_id);
     if (error) throw error;
   },
 };
