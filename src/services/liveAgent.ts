@@ -477,36 +477,25 @@ export class LiveAgent {
     const fullSystemPrompt = SYSTEM_INSTRUCTION + memoryContext;
 
     this.session = await this.ai.live.connect({
-      model: "gemini-2.5-flash-live-preview",
+      model: "gemini-2.0-flash-live-preview-04-09",
       config: {
-        systemInstruction: fullSystemPrompt,
-        tools: TOOLS as any,
-        responseModalities: ["AUDIO"] as any,
-        temperature: 0.8,
-        maxOutputTokens: 300,
-        topP: 0.95,
-        inputAudioTranscription: {},
-        outputAudioTranscription: {},
+        responseModalities: ["TEXT"] as any,
       } as any,
       callbacks: {
         onopen: () => {
-          console.log("[EBD] Connected");
-          this.update({ status: "connected", listening: true, error: null });
-          this.startStreamingAudio();
+          console.log("[EBD] Connected - bare test OK");
+          // If this model works, we'll re-enable features
         },
         onmessage: (e: any) => {
-          this.handleServerMessage(e);
+          console.log("[EBD] Message received:", JSON.stringify(e).slice(0, 200));
         },
         onerror: (e: any) => {
-          console.error("[EBD] Socket error:", e);
+          console.error("[EBD] Socket error:", JSON.stringify(e));
         },
-        onclose: () => {
-          console.log("[EBD] Connection closed");
+        onclose: (e: any) => {
+          console.log("[EBD] Connection closed - code:", e?.code, "reason:", e?.reason);
           this.stopMediaRecorder();
           this.update({ status: "disconnected", listening: false });
-          if (this.reconnectAttempts < 5) {
-            this.scheduleReconnect();
-          }
         },
       },
     });
