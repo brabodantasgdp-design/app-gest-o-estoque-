@@ -7,3 +7,4 @@ coverage/
 *.exe
 .env*
 !.env.example
+auth_info_baileys/
