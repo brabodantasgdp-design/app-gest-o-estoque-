@@ -186,7 +186,10 @@ export class LiveAgent {
         }),
       });
 
-      if (!res.ok) throw new Error(`Server ${res.status}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.stack || `Server ${res.status}`);
+      }
       const data = await res.json();
       let responseText = data.text || "";
       const functionCalls: any[] = data.functionCalls || [];

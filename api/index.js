@@ -71,14 +71,18 @@ app.post("/api/ebdAi/agent", async (req, res) => {
     if (!GEMINI_KEY) return res.status(500).json({ error: "GEMINI_API_KEY not set" });
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
-    const response = await ai.models.generateContent({ model: "gemini-2.0-flash", contents, config: { systemInstruction, tools, temperature: 0.7, maxOutputTokens: 512 } });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents,
+      config: { systemInstruction, tools, temperature: 0.7, maxOutputTokens: 512 },
+    });
     const parts = response.candidates?.[0]?.content?.parts || [];
     const text = parts.filter((p) => p.text).map((p) => p.text).join("");
     const functionCalls = parts.filter((p) => p.functionCall).map((p) => p.functionCall);
     return res.json({ success: true, text, functionCalls });
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: e.message });
+    console.error("Agent proxy error:", e?.message || e, e?.stack?.slice?.(0, 300));
+    return res.status(500).json({ success: false, error: e?.message || String(e), stack: e?.stack?.slice?.(0, 500) });
   }
 });
 
