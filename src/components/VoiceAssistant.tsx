@@ -9,6 +9,8 @@ import { ebdAi, SystemState } from '../services/jarvisCore';
 import { ebdAiVoice, VoiceConfig } from '../services/jarvisVoice';
 import { ebdAiTools, ToolCall } from '../services/jarvisTools';
 import { geminiService } from '../services/geminiService';
+import { toolExecutor, ToolResult } from '../services/advancedTools';
+import { episodicMemory } from '../services/episodicMemory';
 import { Insumo, Product, Order, FichaTecnica, InvoiceScan, Tenant } from '../types';
 
 interface VoiceAssistantProps {
@@ -122,26 +124,119 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       // Add user turn to context
       ebdAi.addTurn('user', text);
       
-      // Try Gemini first, fallback to local tools
-      let response;
+      // Record episode start
+      const toolsUsed: string[] = [];
+      let response: { success: boolean; message: string; data?: any } = { success: false, message: '' };
       
       try {
-        // Use Gemini for intelligent processing
+        // Try Gemini first
         const geminiResponse = await geminiService.chat(text);
         response = {
           success: geminiResponse.success,
           message: geminiResponse.response,
           data: geminiResponse.functionCalls?.[0] ? { navigate: geminiResponse.functionCalls[0].args?.module } : null,
         };
+        
+        if (geminiResponse.functionCalls) {
+          geminiResponse.functionCalls.forEach(fc => toolsUsed.push(fc.name));
+        }
       } catch (geminiError) {
         console.log('Gemini unavailable, using local tools');
-        // Fallback to local EBD AI tools
-        response = await ebdAiTools.processNaturalLanguage(text, activeTenantId);
+        
+        // Fallback to advanced tools with execution
+        const context = {
+          tenantId: activeTenantId,
+          userId: 'current',
+          insumos,
+          products,
+          orders,
+          fichas,
+        };
+
+        // Try to match a tool call
+        const lower = text.toLowerCase();
+        let toolResult: ToolResult | null = null;
+
+        if (lower.includes('quanto tenho') || lower.includes('estoque de')) {
+          const itemMatch = lower.match(/(?:de|do|da)\s+(.+?)[\?\s]*$/);
+          const itemName = itemMatch ? itemMatch[1].trim() : '';
+          toolResult = await toolExecutor.execute('getInventoryStatus', { lowStockOnly: false }, context);
+          toolsUsed.push('getInventoryStatus');
+        } else if (lower.includes('adicionar') || lower.includes('entrou')) {
+          const qtyMatch = lower.match(/(\d+)/);
+          const itemMatch = lower.match(/(?:de|do|da)\s+(.+?)[\.\s]*$/);
+          if (qtyMatch && itemMatch) {
+            toolResult = await toolExecutor.execute('addStock', {
+              itemName: itemMatch[1].trim(),
+              quantity: parseInt(qtyMatch[1]),
+            }, context);
+            toolsUsed.push('addStock');
+          }
+        } else if (lower.includes('remover') || lower.includes('saiu')) {
+          const qtyMatch = lower.match(/(\d+)/);
+          const itemMatch = lower.match(/(?:de|do|da)\s+(.+?)[\.\s]*$/);
+          if (qtyMatch && itemMatch) {
+            toolResult = await toolExecutor.execute('removeStock', {
+              itemName: itemMatch[1].trim(),
+              quantity: parseInt(qtyMatch[1]),
+            }, context);
+            toolsUsed.push('removeStock');
+          }
+        } else if (lower.includes('resumo') || lower.includes('dashboard')) {
+          toolResult = await toolExecutor.execute('getAnalytics', { type: 'summary' }, context);
+          toolsUsed.push('getAnalytics');
+        } else if (lower.includes('relatório') && lower.includes('vendas')) {
+          toolResult = await toolExecutor.execute('getAnalytics', { type: 'sales' }, context);
+          toolsUsed.push('getAnalytics');
+        } else if (lower.includes('margem') || lower.includes('lucro')) {
+          toolResult = await toolExecutor.execute('getAnalytics', { type: 'profit' }, context);
+          toolsUsed.push('getAnalytics');
+        } else if (lower.includes('criar produto')) {
+          const nameMatch = lower.match(/produto\s+(.+?)(?:\s+por|\s+preço|\s+custa)/i);
+          const priceMatch = lower.match(/(?:por|preço|custa)\s+(?:r\$?\s*)?(\d+[\.,]?\d*)/i);
+          if (nameMatch && priceMatch) {
+            toolResult = await toolExecutor.execute('createProduct', {
+              name: nameMatch[1].trim(),
+              price: parseFloat(priceMatch[1].replace(',', '.')),
+            }, context);
+            toolsUsed.push('createProduct');
+          }
+        } else if (lower.includes('ajuda') || lower.includes('help')) {
+          toolResult = await toolExecutor.execute('getHelp', {}, context);
+          toolsUsed.push('getHelp');
+        }
+
+        if (toolResult) {
+          response = {
+            success: toolResult.success,
+            message: toolResult.message,
+            data: toolResult.data,
+          };
+        } else {
+          // Fallback to basic tools
+          const basicResult = await ebdAiTools.processNaturalLanguage(text, activeTenantId);
+          response = {
+            success: basicResult.success,
+            message: basicResult.response,
+            data: basicResult.data,
+          };
+          if (basicResult.success) toolsUsed.push('basicTool');
+        }
       }
       
       // Add EBD AI turn to context
       ebdAi.addTurn('ebdAi', response.message);
       
+      // Record episode in episodic memory
+      episodicMemory.recordEpisode({
+        type: 'command',
+        input: text,
+        output: response.message,
+        toolsUsed,
+        success: response.success,
+        context: { tenantId: activeTenantId },
+      });
+
       // Save to history
       setHistory(prev => [
         { time: new Date(), input: text, response: response.message, success: response.success },
@@ -161,13 +256,24 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       }
 
       // Refresh data if stock was modified
-      if (response.success && ['add_stock', 'remove_stock', 'create_product', 'create_order'].some(t => response.message.includes(t))) {
+      if (response.success && toolsUsed.some(t => ['addStock', 'removeStock', 'createProduct', 'createOrder'].includes(t))) {
         await onRefresh();
       }
 
     } catch (err) {
       console.error('EBD AI Error:', err);
       setResult({ success: false, message: 'Erro ao processar comando.' });
+      
+      // Record error episode
+      episodicMemory.recordEpisode({
+        type: 'error',
+        input: text,
+        output: 'Erro ao processar',
+        toolsUsed: [],
+        success: false,
+        context: { error: err },
+      });
+      
       if (soundEnabled) {
         await ebdAiVoice.speakError('Erro ao processar');
       }

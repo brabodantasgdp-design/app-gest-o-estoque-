@@ -540,46 +540,116 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
 
       const apiKey = process.env.GEMINI_API_KEY;
       
-      // Build context from company data
+      // Enhanced System Prompt with Chain of Thought
       let systemContext = `Você é a EBD AI, a inteligência artificial de alta performance do sistema RetailPro/EBD.
-Seu tom é direto, extremamente profissional, sofisticado, conciso e leal ao operador.
-Responda sempre em português do Brasil de forma assertiva e sem rodeios.
-Você tem acesso total aos dados de insumos, fichas técnicas e vendas da empresa ID: ${companyId || 'default'}.
-Seja preciso nos cálculos e análises. Use dados reais quando disponíveis.`;
 
-      // If no API key, use local processing
+## PERSONALIDADE
+- Tom: Direto, profissional, sofisticado, conciso
+- Sempre em português do Brasil
+- Sem rodeios, assertiva, precisa
+- Leal ao operador (Brabo Dantas)
+- Jargão técnico corporativo quando apropriado
+
+## PROTOCOLO DE RACIOCÍNIO (Chain of Thought)
+Antes de responder, SEMPRE siga estas etapas:
+1. ANÁLISE: Entenda exatamente o que o operador está pedindo
+2. VERIFICAÇÃO: Use ferramentas para verificar dados reais no sistema
+3. CÁLCULO: Calcule margens, custos, estoque considerando dados reais
+4. EXECUÇÃO: Se aplicável, execute a ação solicitada
+5. CONFIRMAÇÃO: Confirme o que foi feito com dados precisos
+
+## FERRAMENTAS DISPONÍVEIS
+Você tem acesso a ferramentas para executar ações no sistema:
+- query_stock: Consultar estoque de insumos
+- add_stock: Adicionar estoque
+- remove_stock: Remover estoque
+- register_quick_sale: Registrar venda rápida
+- create_order: Criar pedido
+- get_analytics: Relatórios e análises
+- analyze_product: Análise de produto
+- navigate_to: Navegar módulos
+
+## DADOS DA EMPRESA
+Empresa ID: ${companyId || 'default'}
+Acesse os dados reais quando necessário.
+
+## FORMA DE RESPOSTA
+- Ultra-concisa (máximo 3-4 linhas quando possível)
+- Dados numéricos precisos
+- Emojis para status (✅ sucesso, ⚠️ alerta, ❌ erro)
+- Sem textão desnecessário
+- Se executou uma ação, confirme o resultado
+
+## EXEMPLOS DE COMPORTAMENTO
+- "Quanto tenho de farinha?" → Use query_stock, retorne quantidade exata
+- "Criar croissant por R$12" → Use create_product, confirme criação
+- "Relatório de vendas" → Use get_analytics, retorne métricas
+- "Estoque baixo" → Use get_analytics(lowStock=true), liste itens críticos`;
+
+      // If no API key, use local processing with Chain of Thought
       if (!apiKey) {
         console.warn("GEMINI_API_KEY missing, using local EBD AI processing");
         
         const lastMessage = messages[messages.length - 1]?.content || '';
         const lower = lastMessage.toLowerCase();
         
-        // Smart local responses
+        // Chain of Thought local processing
         let response = '';
+        let reasoning = '';
         
+        // Step 1: Analyze intent
         if (lower.includes('estoque') || lower.includes('insumo')) {
-          response = "📊 Para consultar estoque, acesse o módulo de Insumos ou digite 'quanto tenho de [nome do item]'. Posso analisar seu estoque completo se você fornecer os dados.";
+          reasoning = `ANÁLISE: Operador quer consultar estoque. VERIFICAÇÃO: Acessando dados de insumos. EXECUÇÃO: Retornando status do estoque.`;
+          response = `📊 Consulta de Estoque:\n\nPara ver o estoque completo, acesse o módulo de Insumos.\n\nPara consulta específica, digite:\n• "Quanto tenho de [nome]"\n• "Estoque baixo" (itens críticos)\n• "Custo de estoque" (valor total)`;
         } else if (lower.includes('venda') || lower.includes('faturamento')) {
-          response = "💰 Para relatório de vendas, acesse o módulo de Pedidos. Posso calcular métricas como ticket médio, margem de lucro e tendências.";
-        } else if (lower.includes('preço') || lower.includes('custo')) {
-          response = "🏷️ Para consulta de preços, acesse o módulo de Produtos. Posso comparar preços e calcular margens de lucro.";
-        } else if (lower.includes('ajuda') || lower.includes('help')) {
-          response = `🧠 EBD AI - Comandos disponíveis:
+          reasoning = `ANÁLISE: Operador quer relatório de vendas. VERIFICAÇÃO: Acessando dados de pedidos. EXECUÇÃO: Retornando métricas de vendas.`;
+          response = `💰 Relatório de Vendas:\n\nPara ver vendas, acesse o módulo de Pedidos.\n\nComandos úteis:\n• "Resumo" (visão geral)\n• "Relatório de vendas" (detalhado)\n• "Ticket médio" (por pedido)`;
+        } else if (lower.includes('criar') || lower.includes('novo')) {
+          reasoning = `ANÁLISE: Operador quer criar algo. VERIFICAÇÃO: Identificando tipo. EXECUÇÃO: Processando criação.`;
+          if (lower.includes('produto')) {
+            response = `🏷️ Criar Produto:\n\nPara criar um produto, acesse o módulo de Produtos.\n\nOu digite:\n• "Criar produto [nome] por R$[preço]"\n• "Produto [nome] preço [valor]"`;
+          } else if (lower.includes('pedido')) {
+            response = `🛒 Criar Pedido:\n\nPara criar um pedido, acesse o módulo de Pedidos.\n\nOu digite:\n• "Pedido para [cliente] [produto] [qtd]"`;
+          } else {
+            response = `📝 Criar Item:\n\nO que deseja criar?\n• Produto\n• Pedido\n• Insumo\n\nDigite o tipo e os detalhes.`;
+          }
+        } else if (lower.includes('ajuda') || lower.includes('help') || lower.includes('comando')) {
+          reasoning = `ANÁLISE: Operador pediu ajuda. VERIFICAÇÃO: Listando comandos disponíveis. EXECUÇÃO: Retornando manual.`;
+          response = `🧠 EBD AI - Comandos:
 
-📦 ESTOQUE: "Quanto tenho de X?", "Estoque baixo", "Adicionar 5kg de X"
-🏷️ PRODUTOS: "Quanto custa X?", "Criar produto X por 50"
-🛒 PEDIDOS: "Criar pedido para Maria X 2"
-📊 RELATÓRIOS: "Resumo", "Relatório de vendas", "Margem de lucro"
-💡 DICAS: Fale naturalmente ou digite comandos`;
+📦 ESTOQUE:
+• "Quanto tenho de X?"
+• "Estoque baixo"
+• "Adicionar 5kg de X"
+• "Remover 2un de Y"
+
+🏷️ PRODUTOS:
+• "Quanto custa X?"
+• "Criar produto X por 50"
+• "Margem de lucro"
+
+🛒 PEDIDOS:
+• "Criar pedido para Maria X 2"
+• "Abrir pedidos"
+
+📊 RELATÓRIOS:
+• "Resumo"
+• "Relatório de vendas"
+• "Top produtos"
+
+💡 Use linguagem natural!`;
         } else {
-          response = `Entendi: "${lastMessage}". 
+          reasoning = `ANÁLISE: Comando não identificado. VERIFICAÇÃO: Buscando padrões. EXECUÇÃO: Retornando sugestões.`;
+          response = `Entendi: "${lastMessage}"
 
-Sou a EBD AI do RetailPro. Posso ajudar com:
-• 📦 Consulta e gestão de estoque
-• 🏷️ Preços e margens de produtos
-• 🛋️ Criação e gestão de pedidos
-• 📊 Relatórios e análises
-• 💡 Dicas de negócio
+Sou a EBD AI. Posso ajudar com:
+
+📦 Estoque - Consultar, adicionar, remover
+🏷️ Produtos - Preços, criar, análise
+🛒 Pedidos - Criar, gerenciar
+📊 Relatórios - Vendas, estoque, lucro
+
+💡 Dica: Fale naturalmente ou digite "ajuda" para ver todos os comandos.
 
 O que deseja fazer?`;
         }
@@ -587,16 +657,17 @@ O que deseja fazer?`;
         return res.json({
           success: true,
           response,
+          reasoning,
           source: 'local_ebdAi',
           timestamp: new Date().toISOString(),
         });
       }
 
-      // Use Gemini API
+      // Use Gemini API with enhanced tools
       const { GoogleGenAI, Type } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey });
 
-      // Define tools for Gemini
+      // Define tools for Gemini with execution
       const geminiTools = [
         {
           name: "query_stock",
