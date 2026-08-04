@@ -2,6 +2,22 @@ import { supabase, isConfigured } from './supabase';
 import type { Tenant, Insumo, FichaTecnica, Product, Order, InvoiceScan, User, RecipeItem } from '../types';
 
 // ============================================
+// TABLE NAMES (PascalCase for Supabase)
+// ============================================
+const TABLES = {
+  TENANT: 'Tenant',
+  INSUMO: 'Insumo',
+  FICHA: 'FichaTecnica',
+  RECIPE_INGREDIENT: 'RecipeIngredient',
+  PRODUCT: 'Product',
+  ORDER: 'Order',
+  ORDER_ITEM: 'OrderItem',
+  INVOICE: 'Invoice',
+  INVOICE_ITEM: 'InvoiceItem',
+  USER: 'User',
+};
+
+// ============================================
 // AUTH
 // ============================================
 export const authService = {
@@ -25,8 +41,8 @@ export const authService = {
 
     try {
       const { data: user, error } = await supabase
-        .from('users')
-        .select('*, tenants(*)')
+        .from(TABLES.USER)
+        .select('*, Tenant(*)')
         .eq('email', email)
         .single();
 
@@ -51,7 +67,7 @@ export const authService = {
           email: user.email,
           role: user.role,
           tenantId: user.tenant_id,
-          tenantName: user.tenants?.name || '',
+          tenantName: user.Tenant?.name || '',
         }
       };
     } catch (err) {
@@ -70,8 +86,8 @@ export const authService = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
       const { data: userData } = await supabase
-        .from('users')
-        .select('*, tenants(*)')
+        .from(TABLES.USER)
+        .select('*, Tenant(*)')
         .eq('id', user.id)
         .single();
       if (!userData) return null;
@@ -81,7 +97,7 @@ export const authService = {
         email: userData.email,
         role: userData.role,
         tenantId: userData.tenant_id,
-        tenantName: userData.tenants?.name || '',
+        tenantName: userData.Tenant?.name || '',
       };
     } catch (_) {
       return null;
@@ -96,372 +112,485 @@ export const tenantsService = {
   async getAll() {
     if (!isConfigured) return [];
     try {
-      const { data, error } = await supabase.from('tenants').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from(TABLES.TENANT).select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map(mapTenant);
-    } catch (_) { return []; }
+      return (data || []).map(t => ({
+        ...t,
+        id: t.id,
+        cnpjStore: t.cnpj_store,
+        plan: t.plan,
+        status: t.status,
+        accessDaysRemaining: t.access_days_remaining,
+        expirationDate: t.expiration_date,
+        maxMonthlyScans: t.max_monthly_scans,
+        scansUsedThisMonth: t.scans_used_this_month,
+        createdAt: t.created_at,
+      })) as Tenant[];
+    } catch { return []; }
   },
+
   async create(tenant: Omit<Tenant, 'id' | 'createdAt'>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('tenants').insert({
-      name: tenant.name, owner_name: tenant.ownerName, email: tenant.email, password: tenant.password,
-      cnpj_store: tenant.cnpjStore, plan: tenant.plan, status: tenant.status,
-      access_days_remaining: tenant.accessDaysRemaining, expiration_date: tenant.expirationDate,
-      max_monthly_scans: tenant.maxMonthlyScans, scans_used_this_month: tenant.scansUsedThisMonth,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.TENANT).insert({
+      name: tenant.name,
+      owner_name: tenant.ownerName,
+      email: tenant.email,
+      password: tenant.password,
+      cnpj_store: tenant.cnpjStore,
+      plan: tenant.plan,
+      status: tenant.status,
+      access_days_remaining: tenant.accessDaysRemaining,
+      expiration_date: tenant.expirationDate,
+      max_monthly_scans: tenant.maxMonthlyScans,
+      scans_used_this_month: tenant.scansUsedThisMonth,
     }).select().single();
     if (error) throw error;
-    return mapTenant(data);
+    return data;
   },
+
   async update(id: string, updates: Partial<Tenant>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('tenants').update({
-      name: updates.name, owner_name: updates.ownerName, email: updates.email,
-      cnpj_store: updates.cnpjStore, plan: updates.plan, status: updates.status,
-      access_days_remaining: updates.accessDaysRemaining, expiration_date: updates.expirationDate,
-      max_monthly_scans: updates.maxMonthlyScans, scans_used_this_month: updates.scansUsedThisMonth,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.TENANT).update({
+      name: updates.name,
+      cnpj_store: updates.cnpjStore,
+      plan: updates.plan,
+      status: updates.status,
     }).eq('id', id).select().single();
     if (error) throw error;
-    return mapTenant(data);
+    return data;
   },
+
   async delete(id: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { error } = await supabase.from('tenants').delete().eq('id', id);
+    if (!isConfigured) return;
+    const { error } = await supabase.from(TABLES.TENANT).delete().eq('id', id);
     if (error) throw error;
-  }
+  },
 };
 
 // ============================================
 // INSUMOS
 // ============================================
 export const insumosService = {
-  async getByTenant(tenantId: string) {
+  async getAll(tenantId: string) {
     if (!isConfigured) return [];
     try {
-      const { data, error } = await supabase.from('insumos').select('*').eq('tenant_id', tenantId).order('name');
+      const { data, error } = await supabase
+        .from(TABLES.INSUMO)
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('name');
       if (error) throw error;
-      return (data || []).map(mapInsumo);
-    } catch (_) { return []; }
+      return (data || []).map(i => ({
+        id: i.id,
+        tenantId: i.tenant_id,
+        code: i.code,
+        name: i.name,
+        category: i.category,
+        unit: i.unit,
+        currentStock: i.current_stock,
+        minStock: i.min_stock,
+        unitCost: i.unit_cost,
+        supplier: i.supplier,
+        lastUpdated: i.last_updated,
+      })) as Insumo[];
+    } catch { return []; }
   },
+
   async create(insumo: Omit<Insumo, 'id'>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('insumos').insert({
-      tenant_id: insumo.tenantId, code: insumo.code, name: insumo.name, category: insumo.category,
-      unit: insumo.unit, current_stock: insumo.currentStock, min_stock: insumo.minStock,
-      unit_cost: insumo.unitCost, supplier: insumo.supplier,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.INSUMO).insert({
+      tenant_id: insumo.tenantId,
+      code: insumo.code,
+      name: insumo.name,
+      category: insumo.category,
+      unit: insumo.unit,
+      current_stock: insumo.currentStock,
+      min_stock: insumo.minStock,
+      unit_cost: insumo.unitCost,
+      supplier: insumo.supplier,
+      last_updated: insumo.lastUpdated,
     }).select().single();
     if (error) throw error;
-    return mapInsumo(data);
+    return data;
   },
+
   async update(id: string, updates: Partial<Insumo>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('insumos').update({
-      code: updates.code, name: updates.name, category: updates.category, unit: updates.unit,
-      current_stock: updates.currentStock, min_stock: updates.minStock, unit_cost: updates.unitCost,
-      supplier: updates.supplier, last_updated: new Date().toISOString().split('T')[0],
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.INSUMO).update({
+      name: updates.name,
+      category: updates.category,
+      unit: updates.unit,
+      current_stock: updates.currentStock,
+      min_stock: updates.minStock,
+      unit_cost: updates.unitCost,
+      supplier: updates.supplier,
+      last_updated: updates.lastUpdated,
     }).eq('id', id).select().single();
     if (error) throw error;
-    return mapInsumo(data);
+    return data;
   },
+
   async delete(id: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { error } = await supabase.from('insumos').delete().eq('id', id);
+    if (!isConfigured) return;
+    const { error } = await supabase.from(TABLES.INSUMO).delete().eq('id', id);
     if (error) throw error;
-  }
+  },
 };
 
 // ============================================
 // FICHAS TECNICAS
 // ============================================
 export const fichasService = {
-  async getByTenant(tenantId: string) {
+  async getAll(tenantId: string) {
     if (!isConfigured) return [];
     try {
-      const { data, error } = await supabase.from('fichas_tecnicas').select('*, recipe_ingredients(*)')
-        .eq('tenant_id', tenantId).order('product_name');
+      const { data, error } = await supabase
+        .from(TABLES.FICHA)
+        .select('*, RecipeIngredient(*)')
+        .eq('tenant_id', tenantId);
       if (error) throw error;
-      return (data || []).map(mapFicha);
-    } catch (_) { return []; }
+      return (data || []).map(f => ({
+        id: f.id,
+        tenantId: f.tenant_id,
+        productName: f.product_name,
+        code: f.code,
+        category: f.category,
+        yieldQuantity: f.yield_quantity,
+        ingredients: (f.RecipeIngredient || []).map((ing: any) => ({
+          insumoId: ing.insumo_id,
+          insumoName: ing.insumo_name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          calculatedCost: ing.calculated_cost,
+        })),
+        rawInsumoCost: f.raw_insumo_cost,
+        wasteMarginPercent: f.waste_margin_percent,
+        operationalOverheadPercent: f.operational_overhead_percent,
+        taxPercent: f.tax_percent,
+        totalProductionCost: f.total_production_cost,
+        targetProfitMarginPercent: f.target_profit_margin_percent,
+        calculatedPrice: f.calculated_price,
+        manualOverridePrice: f.manual_override_price,
+        finalPrice: f.final_price,
+        netProfitPerUnit: f.net_profit_per_unit,
+        profitMarginRate: f.profit_margin_rate,
+      })) as FichaTecnica[];
+    } catch { return []; }
   },
-  async create(ficha: Omit<FichaTecnica, 'id'>, ingredients: Omit<RecipeItem, 'calculatedCost'>[]) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data: fichaData, error: fichaError } = await supabase.from('fichas_tecnicas').insert({
-      tenant_id: ficha.tenantId, code: ficha.code, product_name: ficha.productName,
-      category: ficha.category, yield_quantity: ficha.yieldQuantity,
-      waste_margin_percent: ficha.wasteMarginPercent, operational_overhead_percent: ficha.operationalOverheadPercent,
-      tax_percent: ficha.taxPercent, raw_insumo_cost: ficha.rawInsumoCost,
-      total_production_cost: ficha.totalProductionCost, target_profit_margin_percent: ficha.targetProfitMarginPercent,
-      calculated_price: ficha.calculatedPrice, final_price: ficha.finalPrice,
-      net_profit_per_unit: ficha.netProfitPerUnit, profit_margin_rate: ficha.profitMarginRate,
+
+  async create(ficha: Omit<FichaTecnica, 'id'>, ingredients: RecipeItem[]) {
+    if (!isConfigured) return null;
+    
+    const { data: fichaData, error: fichaError } = await supabase.from(TABLES.FICHA).insert({
+      tenant_id: ficha.tenantId,
+      product_name: ficha.productName,
+      code: ficha.code,
+      category: ficha.category,
+      yield_quantity: ficha.yieldQuantity,
+      raw_insumo_cost: ficha.rawInsumoCost,
+      waste_margin_percent: ficha.wasteMarginPercent,
+      operational_overhead_percent: ficha.operationalOverheadPercent,
+      tax_percent: ficha.taxPercent,
+      total_production_cost: ficha.totalProductionCost,
+      target_profit_margin_percent: ficha.targetProfitMarginPercent,
+      calculated_price: ficha.calculatedPrice,
+      manual_override_price: ficha.manualOverridePrice,
+      final_price: ficha.finalPrice,
+      net_profit_per_unit: ficha.netProfitPerUnit,
+      profit_margin_rate: ficha.profitMarginRate,
     }).select().single();
-    if (fichaError) throw fichaError;
 
-    const insumoCostMap: Record<string, number> = {};
-    if (ingredients.length > 0) {
-      const insumoIds = ingredients.map(ing => ing.insumoId);
-      const { data: insumosData } = await supabase.from('insumos').select('id, unit_cost').in('id', insumoIds);
-      (insumosData || []).forEach((ins: any) => { insumoCostMap[ins.id] = ins.unit_cost; });
+    if (fichaError) throw fichaData;
 
-      const { error: ingError } = await supabase.from('recipe_ingredients').insert(ingredients.map(ing => ({
-        ficha_tecnica_id: fichaData.id, insumo_id: ing.insumoId, insumo_name: ing.insumoName,
-        quantity: ing.quantity, unit: ing.unit,
-        calculated_cost: ing.quantity * (insumoCostMap[ing.insumoId] || 0),
+    // Insert ingredients
+    if (ingredients.length > 0 && fichaData) {
+      const { error: ingError } = await supabase.from(TABLES.RECIPE_INGREDIENT).insert(ingredients.map(ing => ({
+        ficha_id: fichaData.id,
+        insumo_id: ing.insumoId,
+        insumo_name: ing.insumoName,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        calculated_cost: ing.calculatedCost,
       })));
       if (ingError) throw ingError;
     }
 
-    return mapFicha({ ...fichaData, recipe_ingredients: ingredients.map((ing, i) => ({
-      id: `temp-${i}`, ficha_tecnica_id: fichaData.id,
-      insumo_id: ing.insumoId, insumo_name: ing.insumoName,
-      quantity: ing.quantity, unit: ing.unit, calculated_cost: ing.quantity * (insumoCostMap[ing.insumoId] || 0),
-    })) });
+    return fichaData;
   },
+
   async update(id: string, updates: Partial<FichaTecnica>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('fichas_tecnicas').update({
-      code: updates.code, product_name: updates.productName, category: updates.category,
-      yield_quantity: updates.yieldQuantity, waste_margin_percent: updates.wasteMarginPercent,
-      operational_overhead_percent: updates.operationalOverheadPercent, tax_percent: updates.taxPercent,
-      raw_insumo_cost: updates.rawInsumoCost, total_production_cost: updates.totalProductionCost,
-      target_profit_margin_percent: updates.targetProfitMarginPercent, calculated_price: updates.calculatedPrice,
-      final_price: updates.finalPrice, net_profit_per_unit: updates.netProfitPerUnit,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.FICHA).update({
+      product_name: updates.productName,
+      category: updates.category,
+      yield_quantity: updates.yieldQuantity,
+      raw_insumo_cost: updates.rawInsumoCost,
+      waste_margin_percent: updates.wasteMarginPercent,
+      operational_overhead_percent: updates.operationalOverheadPercent,
+      tax_percent: updates.taxPercent,
+      total_production_cost: updates.totalProductionCost,
+      target_profit_margin_percent: updates.targetProfitMarginPercent,
+      calculated_price: updates.calculatedPrice,
+      manual_override_price: updates.manualOverridePrice,
+      final_price: updates.finalPrice,
+      net_profit_per_unit: updates.netProfitPerUnit,
       profit_margin_rate: updates.profitMarginRate,
     }).eq('id', id).select().single();
     if (error) throw error;
-    return mapFicha(data);
+    return data;
   },
+
   async delete(id: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { error } = await supabase.from('fichas_tecnicas').delete().eq('id', id);
+    if (!isConfigured) return;
+    const { error } = await supabase.from(TABLES.FICHA).delete().eq('id', id);
     if (error) throw error;
-  }
+  },
 };
 
 // ============================================
 // PRODUCTS
 // ============================================
 export const productsService = {
-  async getByTenant(tenantId: string) {
+  async getAll(tenantId: string) {
     if (!isConfigured) return [];
     try {
-      const { data, error } = await supabase.from('products').select('*').eq('tenant_id', tenantId).order('name');
+      const { data, error } = await supabase
+        .from(TABLES.PRODUCT)
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('name');
       if (error) throw error;
-      return (data || []).map(mapProduct);
-    } catch (_) { return []; }
+      return (data || []).map(p => ({
+        id: p.id,
+        tenantId: p.tenant_id,
+        name: p.name,
+        category: p.category,
+        sku: p.sku,
+        stockQuantity: p.stock_quantity,
+        oldPrice: p.old_price,
+        saleDiscountPercent: p.sale_discount_percent,
+        newPrice: p.new_price,
+        itemsSold: p.items_sold,
+        fichaTecnicaId: p.ficha_tecnica_id,
+        status: p.status,
+        image: p.image,
+      })) as Product[];
+    } catch { return []; }
   },
+
   async create(product: Omit<Product, 'id'>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('products').insert({
-      tenant_id: product.tenantId, name: product.name, category: product.category, sku: product.sku,
-      stock_quantity: product.stockQuantity, old_price: product.oldPrice,
-      sale_discount_percent: product.saleDiscountPercent, new_price: product.newPrice,
-      items_sold: product.itemsSold, ficha_tecnica_id: product.fichaTecnicaId, status: product.status,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.PRODUCT).insert({
+      tenant_id: product.tenantId,
+      name: product.name,
+      category: product.category,
+      sku: product.sku,
+      stock_quantity: product.stockQuantity,
+      old_price: product.oldPrice,
+      sale_discount_percent: product.saleDiscountPercent,
+      new_price: product.newPrice,
+      items_sold: product.itemsSold,
+      ficha_tecnica_id: product.fichaTecnicaId,
+      status: product.status,
+      image: product.image,
     }).select().single();
     if (error) throw error;
-    return mapProduct(data);
+    return data;
   },
+
   async update(id: string, updates: Partial<Product>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('products').update({
-      name: updates.name, category: updates.category, sku: updates.sku,
-      stock_quantity: updates.stockQuantity, old_price: updates.oldPrice,
-      sale_discount_percent: updates.saleDiscountPercent, new_price: updates.newPrice,
-      items_sold: updates.itemsSold, ficha_tecnica_id: updates.fichaTecnicaId, status: updates.status,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.PRODUCT).update({
+      name: updates.name,
+      category: updates.category,
+      stock_quantity: updates.stockQuantity,
+      new_price: updates.newPrice,
+      status: updates.status,
     }).eq('id', id).select().single();
     if (error) throw error;
-    return mapProduct(data);
+    return data;
   },
+
   async delete(id: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (!isConfigured) return;
+    const { error } = await supabase.from(TABLES.PRODUCT).delete().eq('id', id);
     if (error) throw error;
-  }
+  },
 };
 
 // ============================================
 // ORDERS
 // ============================================
 export const ordersService = {
-  async getByTenant(tenantId: string) {
+  async getAll(tenantId: string) {
     if (!isConfigured) return [];
     try {
-      const { data, error } = await supabase.from('orders').select('*, order_items(*)')
-        .eq('tenant_id', tenantId).order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from(TABLES.ORDER)
+        .select('*, OrderItem(*)')
+        .eq('tenant_id', tenantId);
       if (error) throw error;
-      return (data || []).map(mapOrder);
-    } catch (_) { return []; }
+      return (data || []).map(o => ({
+        id: o.id,
+        tenantId: o.tenant_id,
+        customerName: o.customer_name,
+        totalAmount: o.total_amount,
+        status: o.status,
+        createdAt: o.created_at,
+        items: (o.OrderItem || []).map((item: any) => ({
+          productName: item.product_name,
+          quantity: item.quantity,
+          unitPrice: item.unit_price,
+        })),
+      })) as Order[];
+    } catch { return []; }
   },
-  async create(order: Omit<Order, 'id'>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data: orderData, error: orderError } = await supabase.from('orders').insert({
-      tenant_id: order.tenantId, order_number: order.orderNumber, customer_name: order.customerName,
-      customer_email: order.customerEmail, total_amount: order.totalAmount, status: order.status, date: order.date,
+
+  async create(order: Omit<Order, 'id' | 'createdAt'>) {
+    if (!isConfigured) return null;
+    
+    const { data: orderData, error: orderError } = await supabase.from(TABLES.ORDER).insert({
+      tenant_id: order.tenantId,
+      customer_name: order.customerName,
+      total_amount: order.totalAmount,
+      status: order.status,
     }).select().single();
+
     if (orderError) throw orderError;
 
-    if (order.items.length > 0) {
-      const { error: itemsError } = await supabase.from('order_items').insert(order.items.map(item => ({
-        order_id: orderData.id, product_name: item.productName, quantity: item.quantity, unit_price: item.unitPrice,
+    // Insert order items
+    if (order.items && order.items.length > 0 && orderData) {
+      const { error: itemsError } = await supabase.from(TABLES.ORDER_ITEM).insert(order.items.map(item => ({
+        order_id: orderData.id,
+        product_name: item.productName,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        subtotal: item.quantity * item.unitPrice,
       })));
       if (itemsError) throw itemsError;
     }
-    return mapOrder({ ...orderData, order_items: order.items });
+
+    return orderData;
   },
+
   async updateStatus(id: string, status: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('orders').update({ status }).eq('id', id).select().single();
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.ORDER).update({ status }).eq('id', id).select().single();
     if (error) throw error;
-    return mapOrder(data);
+    return data;
   },
+
   async delete(id: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (!isConfigured) return;
+    const { error } = await supabase.from(TABLES.ORDER).delete().eq('id', id);
     if (error) throw error;
-  }
+  },
 };
 
 // ============================================
-// INVOICES (Notas Fiscais)
+// INVOICES
 // ============================================
 export const invoicesService = {
-  async getByTenant(tenantId: string) {
+  async getAll(tenantId: string) {
     if (!isConfigured) return [];
     try {
-      const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)')
-        .eq('tenant_id', tenantId).order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from(TABLES.INVOICE)
+        .select('*, InvoiceItem(*)')
+        .eq('tenant_id', tenantId);
       if (error) throw error;
-      return (data || []).map(mapInvoice);
-    } catch (_) { return []; }
+      return (data || []).map(inv => ({
+        id: inv.id,
+        tenantId: inv.tenant_id,
+        supplierName: inv.supplier_name,
+        cnpj: inv.cnpj,
+        invoiceNumber: inv.invoice_number,
+        invoiceDate: inv.invoice_date,
+        totalAmount: inv.total_amount,
+        category: inv.category,
+        notes: inv.notes,
+        imageUrl: inv.image_url,
+        processed: inv.processed,
+        processedAt: inv.processed_at,
+        items: (inv.InvoiceItem || []).map((item: any) => ({
+          rawName: item.raw_name,
+          matchedInsumoName: item.matched_insumo_name,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitCost: item.unit_cost,
+          totalCost: item.total_cost,
+          category: item.category,
+        })),
+      })) as InvoiceScan[];
+    } catch { return []; }
   },
+
   async create(invoice: Omit<InvoiceScan, 'id'>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data: invoiceData, error: invoiceError } = await supabase.from('invoices').insert({
-      tenant_id: invoice.tenantId, supplier_name: invoice.supplierName, cnpj: invoice.cnpj,
-      invoice_number: invoice.invoiceNumber, invoice_date: invoice.invoiceDate,
-      total_amount: invoice.totalAmount, category: invoice.category, notes: invoice.notes,
-      image_url: invoice.imageUrl, processed: invoice.processed, processed_at: invoice.processedAt,
+    if (!isConfigured) return null;
+    
+    const { data: invoiceData, error: invoiceError } = await supabase.from(TABLES.INVOICE).insert({
+      tenant_id: invoice.tenantId,
+      supplier_name: invoice.supplierName,
+      cnpj: invoice.cnpj,
+      invoice_number: invoice.invoiceNumber,
+      invoice_date: invoice.invoiceDate,
+      total_amount: invoice.totalAmount,
+      category: invoice.category,
+      notes: invoice.notes,
+      image_url: invoice.imageUrl,
+      processed: invoice.processed,
+      processed_at: invoice.processedAt,
     }).select().single();
+
     if (invoiceError) throw invoiceError;
 
-    if (invoice.items.length > 0) {
-      const { error: itemsError } = await supabase.from('invoice_items').insert(invoice.items.map(item => ({
-        invoice_id: invoiceData.id, raw_name: item.rawName, matched_insumo_name: item.matchedInsumoName,
-        quantity: item.quantity, unit: item.unit, unit_cost: item.unitCost,
-        total_cost: item.totalCost, category: item.category,
+    // Insert invoice items
+    if (invoice.items && invoice.items.length > 0 && invoiceData) {
+      const { error: itemsError } = await supabase.from(TABLES.INVOICE_ITEM).insert(invoice.items.map(item => ({
+        invoice_id: invoiceData.id,
+        raw_name: item.rawName,
+        matched_insumo_name: item.matchedInsumoName,
+        quantity: item.quantity,
+        unit: item.unit,
+        unit_cost: item.unitCost,
+        total_cost: item.totalCost,
+        category: item.category,
       })));
       if (itemsError) throw itemsError;
     }
-    return mapInvoice({ ...invoiceData, invoice_items: invoice.items });
+
+    return invoiceData;
   },
+
   async update(id: string, updates: Partial<InvoiceScan>) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { data, error } = await supabase.from('invoices').update({
-      supplier_name: updates.supplierName, cnpj: updates.cnpj, invoice_number: updates.invoiceNumber,
-      invoice_date: updates.invoiceDate, total_amount: updates.totalAmount, category: updates.category,
-      notes: updates.notes, processed: updates.processed, processed_at: updates.processedAt,
+    if (!isConfigured) return null;
+    const { data, error } = await supabase.from(TABLES.INVOICE).update({
+      processed: updates.processed,
+      processed_at: updates.processedAt,
     }).eq('id', id).select().single();
     if (error) throw error;
-    return mapInvoice(data);
+    return data;
   },
+
   async delete(id: string) {
-    if (!isConfigured) throw new Error('Supabase not configured');
-    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (!isConfigured) return;
+    const { error } = await supabase.from(TABLES.INVOICE).delete().eq('id', id);
     if (error) throw error;
-  }
+  },
 };
 
 // ============================================
-// MAP FUNCTIONS (DB -> App Types)
-// ============================================
-function mapTenant(row: any): Tenant {
-  return {
-    id: row.id, name: row.name, ownerName: row.owner_name, email: row.email,
-    password: row.password_hash, cnpjStore: row.cnpj_store, plan: row.plan, status: row.status,
-    accessDaysRemaining: row.access_days_remaining, expirationDate: row.expiration_date,
-    maxMonthlyScans: row.max_monthly_scans, scansUsedThisMonth: row.scans_used_this_month,
-    createdAt: row.created_at,
-  };
-}
-
-function mapInsumo(row: any): Insumo {
-  return {
-    id: row.id, tenantId: row.tenant_id, code: row.code, name: row.name,
-    category: row.category, unit: row.unit, currentStock: row.current_stock,
-    minStock: row.min_stock, unitCost: row.unit_cost, supplier: row.supplier,
-    lastUpdated: row.last_updated,
-  };
-}
-
-function mapFicha(row: any): FichaTecnica {
-  const ingredients = (row.recipe_ingredients || []).map((ri: any) => ({
-    insumoId: ri.insumo_id, insumoName: ri.insumo_name, quantity: ri.quantity,
-    unit: ri.unit, calculatedCost: ri.calculated_cost,
-  }));
-  return {
-    id: row.id, tenantId: row.tenant_id, code: row.code, productName: row.product_name,
-    category: row.category, yieldQuantity: row.yield_quantity, ingredients,
-    rawInsumoCost: row.raw_insumo_cost, wasteMarginPercent: row.waste_margin_percent,
-    operationalOverheadPercent: row.operational_overhead_percent, taxPercent: row.tax_percent,
-    totalProductionCost: row.total_production_cost, targetProfitMarginPercent: row.target_profit_margin_percent,
-    calculatedPrice: row.calculated_price, finalPrice: row.final_price,
-    netProfitPerUnit: row.net_profit_per_unit, profitMarginRate: row.profit_margin_rate,
-  };
-}
-
-function mapProduct(row: any): Product {
-  return {
-    id: row.id, tenantId: row.tenant_id, name: row.name, category: row.category,
-    sku: row.sku, stockQuantity: row.stock_quantity, oldPrice: row.old_price,
-    saleDiscountPercent: row.sale_discount_percent, newPrice: row.new_price,
-    itemsSold: row.items_sold, fichaTecnicaId: row.ficha_tecnica_id, status: row.status,
-  };
-}
-
-function mapOrder(row: any): Order {
-  const items = (row.order_items || []).map((oi: any) => ({
-    productName: oi.product_name, quantity: oi.quantity, unitPrice: oi.unit_price,
-  }));
-  return {
-    id: row.id, tenantId: row.tenant_id, orderNumber: row.order_number,
-    customerName: row.customer_name, customerEmail: row.customer_email, items,
-    totalAmount: row.total_amount, status: row.status, date: row.date, timeAgo: '',
-  };
-}
-
-function mapInvoice(row: any): InvoiceScan {
-  const items = (row.invoice_items || []).map((ii: any) => ({
-    rawName: ii.raw_name, matchedInsumoName: ii.matched_insumo_name, quantity: ii.quantity,
-    unit: ii.unit, unitCost: ii.unit_cost, totalCost: ii.total_cost, category: ii.category,
-  }));
-  return {
-    id: row.id, tenantId: row.tenant_id, supplierName: row.supplier_name, cnpj: row.cnpj,
-    invoiceNumber: row.invoice_number, invoiceDate: row.invoice_date, totalAmount: row.total_amount,
-    category: row.category, notes: row.notes, imageUrl: row.image_url,
-    processed: row.processed, processedAt: row.processed_at, items,
-  };
-}
-
-// ============================================
-// DATA FETCHER FOR VOICE ASSISTANT
+// DATA FETCHER (for Voice Assistant)
 // ============================================
 export const dataFetcher = {
   async getAllForVoiceAssistant(tenantId: string) {
-    if (!isConfigured) {
-      return { insumos: [], products: [], orders: [], fichas: [], invoices: [] };
-    }
-    
-    try {
-      const [insumos, products, orders, fichas, invoices] = await Promise.all([
-        insumosService.getByTenant(tenantId),
-        productsService.getByTenant(tenantId),
-        ordersService.getByTenant(tenantId),
-        fichasService.getByTenant(tenantId),
-        invoicesService.getByTenant(tenantId),
-      ]);
-      
-      return { insumos, products, orders, fichas, invoices };
-    } catch (err) {
-      console.error('Error fetching data for voice assistant:', err);
-      return { insumos: [], products: [], orders: [], fichas: [], invoices: [] };
-    }
+    const [insumos, products, orders, fichas, invoices] = await Promise.all([
+      insumosService.getAll(tenantId),
+      productsService.getAll(tenantId),
+      ordersService.getAll(tenantId),
+      fichasService.getAll(tenantId),
+      invoicesService.getAll(tenantId),
+    ]);
+    return { insumos, products, orders, fichas, invoices };
   }
 };
