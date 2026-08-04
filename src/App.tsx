@@ -13,7 +13,7 @@ import { SuperAdminModule } from './components/SuperAdminModule';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginForm } from './components/Auth/LoginForm';
-import { VoiceAssistant } from './components/VoiceAssistant';
+import { SimpleVoiceAssistant } from './components/SimpleVoiceAssistant';
 import {
   CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
 } from './types';
@@ -590,18 +590,10 @@ export default function App() {
       </button>
 
       {/* Voice Assistant Modal */}
-      <VoiceAssistant
+      <SimpleVoiceAssistant
         isOpen={isVoiceAssistantOpen}
         onClose={() => setIsVoiceAssistantOpen(false)}
-        insumos={tenantInsumos}
-        products={tenantProducts}
-        orders={tenantOrders}
-        fichas={tenantFichas}
-        invoices={tenantInvoices}
-        tenant={currentTenant}
-        activeTenantId={activeTenantId}
         onNavigate={handleVoiceNavigate}
-        onRefresh={handleRefreshData}
       />
 
     </div>
