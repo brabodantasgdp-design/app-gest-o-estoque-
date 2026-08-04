@@ -9,10 +9,12 @@ import {
   Trash2,
   Check,
   TrendingDown,
-  ArrowUpDown
+  ArrowUpDown,
+  Mic
 } from 'lucide-react';
-import { Insumo, CurrencyType } from '../types';
+import { Insumo, CurrencyType, Product, Order } from '../types';
 import { insumosService } from '../lib/database';
+import { VoiceAssistant } from './VoiceAssistant';
 
 interface InsumosModuleProps {
   insumos: Insumo[];
@@ -29,6 +31,7 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [stockAdjustModal, setStockAdjustModal] = useState<Insumo | null>(null);
   const [adjustAmount, setAdjustAmount] = useState<number>(1000);
+  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
 
   // Form State for new insumo
   const [name, setName] = useState('');
@@ -130,6 +133,64 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
     }
   };
 
+  const handleVoiceAddStock = async (insumoName: string, quantity: number, unit: string) => {
+    const insumo = insumos.find(i => 
+      i.name.toLowerCase().includes(insumoName.toLowerCase())
+    );
+    if (!insumo) {
+      throw new Error(`Insumo "${insumoName}" não encontrado`);
+    }
+    const updated = {
+      ...insumo,
+      currentStock: insumo.currentStock + quantity,
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    await insumosService.update(insumo.id, updated);
+    await onRefresh();
+  };
+
+  const handleVoiceRemoveStock = async (insumoName: string, quantity: number, unit: string) => {
+    const insumo = insumos.find(i => 
+      i.name.toLowerCase().includes(insumoName.toLowerCase())
+    );
+    if (!insumo) {
+      throw new Error(`Insumo "${insumoName}" não encontrado`);
+    }
+    const updated = {
+      ...insumo,
+      currentStock: Math.max(0, insumo.currentStock - quantity),
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    await insumosService.update(insumo.id, updated);
+    await onRefresh();
+  };
+
+  const handleVoiceCreateInsumo = async (name: string, quantity: number, unit: string, price: number) => {
+    const newInsumo: Insumo = {
+      id: `ins-${Date.now()}`,
+      tenantId: activeTenantId,
+      code: `INS-${Math.floor(100 + Math.random() * 900)}`,
+      name,
+      category: 'Voz',
+      unit: unit as 'g' | 'ml' | 'un',
+      currentStock: quantity,
+      minStock: Math.floor(quantity * 0.2),
+      unitCost: price / quantity,
+      supplier: 'Via assistente de voz',
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    await insumosService.create(newInsumo);
+    await onRefresh();
+  };
+
+  const handleVoiceQueryStock = (insumoName: string) => {
+    const insumo = insumos.find(i => 
+      i.name.toLowerCase().includes(insumoName.toLowerCase())
+    );
+    if (!insumo) return null;
+    return { currentStock: insumo.currentStock, unit: insumo.unit };
+  };
+
   const formatUnitDisplay = (qty: number, unit: 'g' | 'ml' | 'un') => {
     if (unit === 'g' && qty >= 1000) return `${(qty / 1000).toLocaleString('pt-BR')} kg`;
     if (unit === 'ml' && qty >= 1000) return `${(qty / 1000).toLocaleString('pt-BR')} L`;
@@ -153,13 +214,22 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-extrabold text-xs shadow-lg shadow-orange-500/20 transition-all active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Insumo
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsVoiceAssistantOpen(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-extrabold text-xs shadow-lg shadow-purple-500/20 transition-all active:scale-95"
+          >
+            <Mic className="w-4 h-4" />
+            Assistente de Voz
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-extrabold text-xs shadow-lg shadow-orange-500/20 transition-all active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Insumo
+          </button>
+        </div>
       </div>
 
       {/* Stats Summary Cards */}
@@ -483,6 +553,19 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
           </div>
         </div>
       )}
+
+      {/* Voice Assistant Modal */}
+      <VoiceAssistant
+        isOpen={isVoiceAssistantOpen}
+        onClose={() => setIsVoiceAssistantOpen(false)}
+        insumos={insumos}
+        products={[]}
+        orders={[]}
+        onAddStock={handleVoiceAddStock}
+        onRemoveStock={handleVoiceRemoveStock}
+        onCreateInsumo={handleVoiceCreateInsumo}
+        onQueryStock={handleVoiceQueryStock}
+      />
 
     </div>
   );
