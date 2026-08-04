@@ -33,6 +33,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currency, setCurrency] = useState<CurrencyType>('BRL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<{ insumos: number; products: number; orders: number } | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
@@ -131,6 +132,44 @@ export default function App() {
     };
     loadAllData();
   }, [activeTenantId]);
+
+  useEffect(() => {
+    if (searchTerm.length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    const term = searchTerm.toLowerCase();
+    const insumoResults = allInsumos.filter(i =>
+      i.name.toLowerCase().includes(term) || i.code.toLowerCase().includes(term)
+    );
+    const productResults = allProducts.filter(p =>
+      p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term) || p.category.toLowerCase().includes(term)
+    );
+    const orderResults = allOrders.filter(o =>
+      o.orderNumber.toLowerCase().includes(term) || o.customerName.toLowerCase().includes(term)
+    );
+    setSearchResults({
+      insumos: insumoResults.length,
+      products: productResults.length,
+      orders: orderResults.length,
+    });
+  }, [searchTerm, allInsumos, allProducts, allOrders]);
+
+  const searchCount = searchResults
+    ? [
+        searchResults.insumos > 0 && `${searchResults.insumos} insumos`,
+        searchResults.products > 0 && `${searchResults.products} produtos`,
+        searchResults.orders > 0 && `${searchResults.orders} pedidos`,
+      ].filter(Boolean).join(', ')
+    : undefined;
+
+  const handleSearchEnter = useCallback(() => {
+    if (!searchResults) return;
+    const { insumos, products, orders } = searchResults;
+    if (insumos >= products && insumos >= orders) setActiveTab('insumos');
+    else if (products >= orders) setActiveTab('products');
+    else setActiveTab('orders');
+  }, [searchResults]);
 
   const tenantInsumos = useMemo(() => allInsumos, [allInsumos]);
   const tenantFichas = useMemo(() => allFichas, [allFichas]);
@@ -396,6 +435,8 @@ export default function App() {
         setActiveTenantId={setActiveTenantId}
         onOpenSuperAdmin={() => setActiveTab('super_admin')}
         currentUser={currentUser}
+        searchCount={searchCount}
+        onSearchEnter={handleSearchEnter}
       />
 
       <div className="bg-[#121214] border-b border-zinc-800/60 px-4 lg:px-6 py-2 flex items-center justify-between text-xs text-zinc-400">

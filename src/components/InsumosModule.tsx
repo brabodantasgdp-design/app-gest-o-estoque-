@@ -8,7 +8,8 @@ import {
   Mic,
   Package,
   Minus,
-  X
+  X,
+  Download
 } from 'lucide-react';
 import { Insumo, CurrencyType } from '../types';
 import { insumosService } from '../lib/database';
@@ -43,6 +44,21 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({
   
   // Adjust State
   const [adjustQty, setAdjustQty] = useState('');
+
+  const exportCSV = (data: Insumo[], filename: string) => {
+    const headers = 'Código;Nome;Categoria;Estoque;Unidade;Mínimo;Custo Unit;Fornecedor';
+    const rows = data.map(i =>
+      `${i.code};${i.name};${i.category};${i.currentStock};${i.unit};${i.minStock};${i.unitCost.toFixed(4)};${i.supplier}`
+    );
+    const csv = [headers, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const formatCurrency = (val: number) => {
     if (currency === 'BRL') return `R$ ${val.toFixed(2)}`;
@@ -141,13 +157,23 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({
             <Package className="w-5 h-5 text-amber-400" />
             Insumos
           </h1>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Novo</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-xs"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Novo</span>
+            </button>
+            <button
+              onClick={() => exportCSV(insumos, 'insumos.csv')}
+              className="flex items-center gap-1 px-2 py-2 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-amber-400 text-xs font-bold"
+              title="Exportar CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">CSV</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats */}

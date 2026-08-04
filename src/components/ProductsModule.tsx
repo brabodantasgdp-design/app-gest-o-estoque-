@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Package, Plus, Search, Trash2, Edit2, X, Save } from 'lucide-react';
+import { Package, Plus, Search, Trash2, Edit2, X, Save, Download } from 'lucide-react';
 import { Product, CurrencyType } from '../types';
 import { productsService } from '../lib/database';
 
@@ -22,6 +22,21 @@ export const ProductsModule: React.FC<ProductsModuleProps> = ({ products, setPro
   const [stockQuantity, setStockQuantity] = useState<number>(0);
   const [newPrice, setNewPrice] = useState<number>(0);
   const [itemsSold, setItemsSold] = useState<number>(0);
+
+  const exportCSV = (data: Product[], filename: string) => {
+    const headers = 'SKU;Nome;Categoria;Preço;Desconto;Preço Final;Estoque;Status;Vendidos';
+    const rows = data.map(p =>
+      `${p.sku};${p.name};${p.category};${p.oldPrice.toFixed(2)};${p.saleDiscountPercent}%;${p.newPrice.toFixed(2)};${p.stockQuantity};${p.status};${p.itemsSold}`
+    );
+    const csv = [headers, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const formatCurrency = (val: number) => {
     if (currency === 'BRL') return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -147,6 +162,14 @@ export const ProductsModule: React.FC<ProductsModuleProps> = ({ products, setPro
         >
           <Plus className="w-4 h-4" />
           Novo Produto
+        </button>
+        <button
+          onClick={() => exportCSV(products, 'produtos.csv')}
+          className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-amber-400 text-xs font-bold"
+          title="Exportar CSV"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">CSV</span>
         </button>
       </div>
 

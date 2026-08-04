@@ -13,6 +13,8 @@ interface HeaderProps {
   setActiveTenantId: (id: string) => void;
   onOpenSuperAdmin: () => void;
   currentUser?: User;
+  searchCount?: string;
+  onSearchEnter?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,6 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTenantId,
   onOpenSuperAdmin,
   currentUser,
+  searchCount,
+  onSearchEnter,
 }) => {
   const currentTenant = tenants.find((t) => t.id === activeTenantId);
 
@@ -77,6 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && onSearchEnter) onSearchEnter(); }}
             placeholder="Buscar..."
             className="w-full bg-[#121214] border border-zinc-800/80 rounded-xl pl-10 pr-12 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500/60 transition-all"
           />
@@ -84,6 +89,11 @@ export const Header: React.FC<HeaderProps> = ({
             <Command className="w-3 h-3" />
             <span>K</span>
           </div>
+          {searchCount && (
+            <div className="absolute -bottom-5 left-0 right-0 text-[9px] text-amber-400 font-bold truncate px-1">
+              {searchCount}
+            </div>
+          )}
         </div>
       </div>
 

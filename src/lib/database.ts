@@ -119,15 +119,16 @@ export const authService = {
         return { success: false, message: 'Erro ao configurar super admin' };
       }
 
-      // Regular user lookup
+      // Regular user lookup with password
       const { data: user, error } = await supabase
         .from(TABLES.USER)
         .select('*')
         .eq('email', email)
+        .eq('password_hash', password)
         .single();
 
       if (error || !user) {
-        return { success: false, message: 'Usuario nao encontrado' };
+        return { success: false, message: 'Email ou senha incorretos' };
       }
 
       // Get tenant name
@@ -868,6 +869,60 @@ export const invoicesService = {
     const { data: record } = await supabase.from(TABLES.INVOICE).select('tenant_id').eq('id', id).single();
     if (!record) return;
     const { error } = await supabase.from(TABLES.INVOICE).delete().eq('id', id).eq('tenant_id', record.tenant_id);
+    if (error) throw error;
+  },
+};
+
+// ============================================
+// USERS SERVICE
+// ============================================
+export const usersService = {
+  async getAll() {
+    if (!isConfigured) return loadLocal<any>('ebd_users');
+    const { data, error } = await supabase.from(TABLES.USER).select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getByTenant(tenantId: string) {
+    if (!isConfigured) return loadLocal<any>('ebd_users').filter((u: any) => u.tenant_id === tenantId);
+    const { data, error } = await supabase.from(TABLES.USER).select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async create(user: { name: string; email: string; password_hash: string; role: string; tenant_id: string }) {
+    if (!isConfigured) {
+      const u = { id: genId(), ...user, created_at: new Date().toISOString() };
+      const all = loadLocal<any>('ebd_users');
+      all.push(u);
+      saveLocal('ebd_users', all);
+      return u;
+    }
+    const { data, error } = await supabase.from(TABLES.USER).insert(user).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(id: string, updates: any) {
+    if (!isConfigured) {
+      const all = loadLocal<any>('ebd_users');
+      const idx = all.findIndex((u: any) => u.id === id);
+      if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; saveLocal('ebd_users', all); }
+      return all[idx];
+    }
+    const { data, error } = await supabase.from(TABLES.USER).update(updates).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(id: string) {
+    if (!isConfigured) {
+      const all = loadLocal<any>('ebd_users').filter((u: any) => u.id !== id);
+      saveLocal('ebd_users', all);
+      return;
+    }
+    const { error } = await supabase.from(TABLES.USER).delete().eq('id', id);
     if (error) throw error;
   },
 };

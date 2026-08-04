@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldAlert,
   Users,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Tenant, SubscriptionPlan, SubscriptionStatus, CurrencyType } from '../types';
 import { tenantsService } from '../lib/database';
+import { usersService } from '../lib/database';
 
 interface SuperAdminModuleProps {
   tenants: Tenant[];
@@ -52,9 +53,38 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
   const [plan, setPlan] = useState<SubscriptionPlan>('Pro');
   const [status, setStatus] = useState<SubscriptionStatus>('Ativo');
   const [accessDays, setAccessDays] = useState<number>(30);
-
-  // Toggle visible passwords in table
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  // Users management
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPass, setNewUserPass] = useState('');
+  const [newUserRole, setNewUserRole] = useState('store_owner');
+  const [newUserTenant, setNewUserTenant] = useState('');
+
+  useEffect(() => { usersService.getAll().then(setAllUsers).catch(() => {}); }, []);
+
+  const handleAddUser = async () => {
+    if (!newUserName || !newUserEmail || !newUserPass || !newUserTenant) return;
+    try {
+      await usersService.create({
+        name: newUserName, email: newUserEmail, password_hash: newUserPass,
+        role: newUserRole, tenant_id: newUserTenant,
+      });
+      setNewUserName(''); setNewUserEmail(''); setNewUserPass('');
+      setShowUserForm(false);
+      const updated = await usersService.getAll();
+      setAllUsers(updated);
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    if (!confirm('Remover este usuario?')) return;
+    await usersService.delete(id);
+    setAllUsers((prev) => prev.filter((u) => u.id !== id));
+  };
 
   const formatCurrency = (val: number) => {
     if (currency === 'BRL') return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -554,9 +584,62 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
                     className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500 font-mono"
                   />
                 </div>
-              </div>
-            </div>
+      </div>
 
+      {/* ========== GESTÃO DE USUÁRIOS ========== */}
+      <div className="mt-8 bg-[#121214] border border-zinc-800/80 rounded-2xl p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-extrabold text-white flex items-center gap-2"><Users className="w-4 h-4 text-amber-500"/> Usuários</h2>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Cadastre usuários para acessar o sistema</p>
+          </div>
+          <button onClick={() => setShowUserForm(!showUserForm)} className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[11px] hover:bg-amber-500/20 flex items-center gap-1 cursor-pointer">
+            <Plus className="w-3 h-3"/> Novo
+          </button>
+        </div>
+
+        {showUserForm && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
+            <input placeholder="Nome" value={newUserName} onChange={e => setNewUserName(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40"/>
+            <input placeholder="Email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40"/>
+            <input placeholder="Senha" type="password" value={newUserPass} onChange={e => setNewUserPass(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40"/>
+            <select value={newUserTenant} onChange={e => setNewUserTenant(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40">
+              <option value="">Selecione a loja</option>
+              {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <select value={newUserRole} onChange={e => setNewUserRole(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40">
+              <option value="store_owner">Dono</option>
+              <option value="employee">Funcionário</option>
+            </select>
+            <button onClick={handleAddUser} className="col-span-2 md:col-span-1 px-4 py-2 rounded-lg bg-amber-500 text-black font-extrabold text-xs hover:bg-amber-400 cursor-pointer">Salvar</button>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {allUsers.length === 0 && <div className="text-xs text-zinc-500 text-center py-4">Nenhum usuário cadastrado.</div>}
+          {allUsers.map(u => {
+            const tenant = tenants.find(t => t.id === u.tenant_id);
+            return (
+              <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-[#18181b] border border-zinc-800/60 text-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 font-extrabold text-[10px] flex items-center justify-center border border-amber-500/20">{u.name?.charAt(0).toUpperCase()}</div>
+                  <div className="min-w-0">
+                    <div className="text-white font-bold truncate">{u.name}</div>
+                    <div className="text-zinc-500 text-[10px] truncate">{u.email}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-400">{u.role === 'super_admin' ? 'Admin' : u.role === 'store_owner' ? 'Dono' : 'Func'}</span>
+                  <span className="text-[10px] text-zinc-500 truncate max-w-[100px]">{tenant?.name || 'Sem loja'}</span>
+                  <button onClick={() => handleDeleteUser(u.id)} className="text-zinc-600 hover:text-red-400 cursor-pointer"><Trash2 className="w-3 h-3"/></button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+    </div>
             <div className="flex justify-end gap-3 pt-3 border-t border-zinc-800">
               <button
                 type="button"
