@@ -104,8 +104,19 @@ export const InvoicesListView: React.FC<InvoicesListViewProps> = ({
   };
 
   const handleExportCSV = () => {
-    const tenantId = currentTenant?.id || '';
-    window.open(`/api/invoices/export?tenantId=${tenantId}`, '_blank');
+    let csvContent = "ID,Numero_NF,Fornecedor,CNPJ,Data,Categoria,Valor_Total,Status,Observacoes\n";
+    invoices.forEach((inv) => {
+      const statusText = inv.processed ? "Processada" : "Pendente";
+      const cleanNotes = (inv.notes || "").replace(/"/g, '""');
+      csvContent += `"${inv.id}","${inv.invoiceNumber}","${inv.supplierName}","${inv.cnpj}","${inv.invoiceDate}","${inv.category}",${inv.totalAmount},"${statusText}","${cleanNotes}"\n`;
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `relatorio_notas_fiscais_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const categoryBadgeStyles: Record<string, { label: string; style: string }> = {

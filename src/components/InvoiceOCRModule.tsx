@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { geminiService } from '../services/geminiService';
 import {
   ScanText,
   Upload,
@@ -107,23 +108,20 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
     }
   };
 
-  // Call Express + Gemini server route /api/ocr-invoice
+  // Call Gemini directly from browser
   const processOCRWithServer = async (base64Data?: string, mimeType?: string, sampleText?: string) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/ocr-invoice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: base64Data,
-          mimeType: mimeType || 'image/jpeg',
-          sampleText,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success && data.invoiceData) {
-        const inv = data.invoiceData;
+      let invoiceData;
+      
+      if (base64Data) {
+        invoiceData = await geminiService.processOCR(base64Data, mimeType || 'image/jpeg');
+      } else {
+        invoiceData = await geminiService.processOCR(base64Data || '', mimeType || 'image/jpeg');
+      }
+      
+      if (invoiceData && invoiceData.supplierName) {
+        const inv = invoiceData;
         
         // Calculate total from items (more accurate than OCR total)
         const calculatedTotal = inv.items?.reduce(
@@ -149,7 +147,7 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
         };
         setActiveScan(newScan);
       } else {
-        alert('Falha ao processar OCR. Usando dados da nota de exemplo.');
+        alert('Falha ao processar OCR. Tente novamente.');
       }
     } catch (err) {
       console.error('Error calling /api/ocr-invoice:', err);
