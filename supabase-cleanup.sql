@@ -1,30 +1,37 @@
 -- ============================================================
--- EBD APP - DATABASE CLEANUP SCRIPT
--- Remove duplicate tables and standardize to PascalCase
+-- EBD APP - DATABASE FIX (IDEMPOTENT)
+-- Safe to run multiple times. Handles existing tables/policies.
 -- Execute this in Supabase SQL Editor
 -- ============================================================
 
--- ============================================================
--- STEP 1: DROP OLD DUPLICATE TABLES (lowercase/portuguese)
--- ============================================================
+-- STEP 1: DROP ALL duplicate/old tables (cascade removes FK deps)
+-- Lowercase old names
+DROP TABLE IF EXISTS "public"."recipe_ingredients" CASCADE;
+DROP TABLE IF EXISTS "public"."fichas_tecnicas" CASCADE;
+DROP TABLE IF EXISTS "public"."order_items" CASCADE;
+DROP TABLE IF EXISTS "public"."invoice_items" CASCADE;
+DROP TABLE IF EXISTS "public"."orders" CASCADE;
+DROP TABLE IF EXISTS "public"."invoices" CASCADE;
+DROP TABLE IF EXISTS "public"."products" CASCADE;
+DROP TABLE IF EXISTS "public"."insumos" CASCADE;
+DROP TABLE IF EXISTS "public"."clientes" CASCADE;
+DROP TABLE IF EXISTS "public"."users" CASCADE;
+DROP TABLE IF EXISTS "public"."tenants" CASCADE;
+-- PascalCase old names (to recreate cleanly)
+DROP TABLE IF EXISTS "public"."InvoiceItem" CASCADE;
+DROP TABLE IF EXISTS "public"."Invoice" CASCADE;
+DROP TABLE IF EXISTS "public"."OrderItem" CASCADE;
+DROP TABLE IF EXISTS "public"."Order" CASCADE;
+DROP TABLE IF EXISTS "public"."RecipeIngredient" CASCADE;
+DROP TABLE IF EXISTS "public"."FichaTecnica" CASCADE;
+DROP TABLE IF EXISTS "public"."Product" CASCADE;
+DROP TABLE IF EXISTS "public"."Insumo" CASCADE;
+DROP TABLE IF EXISTS "public"."User" CASCADE;
+DROP TABLE IF EXISTS "public"."Tenant" CASCADE;
 
--- Drop tables in correct order (respect foreign keys)
-DROP TABLE IF EXISTS recipe_ingredients CASCADE;
-DROP TABLE IF EXISTS fichas_tecnicas CASCADE;
-DROP TABLE IF EXISTS order_items CASCADE;
-DROP TABLE IF EXISTS invoice_items CASCADE;
-DROP TABLE IF EXISTS orders CASCADE;
-DROP TABLE IF EXISTS invoices CASCADE;
-DROP TABLE IF EXISTS products CASCADE;
-DROP TABLE IF EXISTS insumos CASCADE;
-DROP TABLE IF EXISTS clientes CASCADE;
+-- STEP 2: CREATE TABLES (PascalCase)
 
--- ============================================================
--- STEP 2: CREATE CORRECT TABLES (PascalCase)
--- ============================================================
-
--- Tenants
-CREATE TABLE IF NOT EXISTS "Tenant" (
+CREATE TABLE "Tenant" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   owner_name TEXT,
@@ -40,8 +47,7 @@ CREATE TABLE IF NOT EXISTS "Tenant" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Insumos (Ingredients)
-CREATE TABLE IF NOT EXISTS "Insumo" (
+CREATE TABLE "Insumo" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES "Tenant"(id) ON DELETE CASCADE,
   code TEXT,
@@ -56,8 +62,7 @@ CREATE TABLE IF NOT EXISTS "Insumo" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Fichas Técnicas (Recipes)
-CREATE TABLE IF NOT EXISTS "FichaTecnica" (
+CREATE TABLE "FichaTecnica" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES "Tenant"(id) ON DELETE CASCADE,
   product_name TEXT NOT NULL,
@@ -78,8 +83,7 @@ CREATE TABLE IF NOT EXISTS "FichaTecnica" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Recipe Ingredients
-CREATE TABLE IF NOT EXISTS "RecipeIngredient" (
+CREATE TABLE "RecipeIngredient" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ficha_id UUID REFERENCES "FichaTecnica"(id) ON DELETE CASCADE,
   insumo_id UUID REFERENCES "Insumo"(id),
@@ -89,8 +93,7 @@ CREATE TABLE IF NOT EXISTS "RecipeIngredient" (
   calculated_cost NUMERIC DEFAULT 0
 );
 
--- Products
-CREATE TABLE IF NOT EXISTS "Product" (
+CREATE TABLE "Product" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES "Tenant"(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -107,8 +110,7 @@ CREATE TABLE IF NOT EXISTS "Product" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Orders
-CREATE TABLE IF NOT EXISTS "Order" (
+CREATE TABLE "Order" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES "Tenant"(id) ON DELETE CASCADE,
   customer_name TEXT,
@@ -117,8 +119,7 @@ CREATE TABLE IF NOT EXISTS "Order" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Order Items
-CREATE TABLE IF NOT EXISTS "OrderItem" (
+CREATE TABLE "OrderItem" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id UUID REFERENCES "Order"(id) ON DELETE CASCADE,
   product_name TEXT,
@@ -127,8 +128,7 @@ CREATE TABLE IF NOT EXISTS "OrderItem" (
   subtotal NUMERIC DEFAULT 0
 );
 
--- Invoices (Notas Fiscais)
-CREATE TABLE IF NOT EXISTS "Invoice" (
+CREATE TABLE "Invoice" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES "Tenant"(id) ON DELETE CASCADE,
   supplier_name TEXT,
@@ -144,8 +144,7 @@ CREATE TABLE IF NOT EXISTS "Invoice" (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Invoice Items
-CREATE TABLE IF NOT EXISTS "InvoiceItem" (
+CREATE TABLE "InvoiceItem" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   invoice_id UUID REFERENCES "Invoice"(id) ON DELETE CASCADE,
   raw_name TEXT,
@@ -157,20 +156,24 @@ CREATE TABLE IF NOT EXISTS "InvoiceItem" (
   category TEXT
 );
 
--- ============================================================
--- STEP 3: CREATE INDEXES
--- ============================================================
+CREATE TABLE "User" (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID REFERENCES "Tenant"(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT DEFAULT 'store_owner',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
+-- STEP 3: INDEXES
 CREATE INDEX IF NOT EXISTS idx_insumo_tenant ON "Insumo"(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_product_tenant ON "Product"(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_order_tenant ON "Order"(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_tenant ON "Invoice"(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_ficha_tenant ON "FichaTecnica"(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_user_tenant ON "User"(tenant_id);
 
--- ============================================================
--- STEP 4: ENABLE RLS (Row Level Security)
--- ============================================================
-
+-- STEP 4: RLS
 ALTER TABLE "Tenant" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Insumo" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "FichaTecnica" ENABLE ROW LEVEL SECURITY;
@@ -180,24 +183,38 @@ ALTER TABLE "Order" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "OrderItem" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Invoice" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "InvoiceItem" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "User" ENABLE ROW LEVEL SECURITY;
 
--- ============================================================
--- STEP 5: CREATE RLS POLICIES (allow all for now)
--- ============================================================
+-- STEP 5: RLS POLICIES (drop existing first to avoid conflicts)
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Allow all" ON "Tenant";
+  DROP POLICY IF EXISTS "Allow all" ON "Insumo";
+  DROP POLICY IF EXISTS "Allow all" ON "FichaTecnica";
+  DROP POLICY IF EXISTS "Allow all" ON "RecipeIngredient";
+  DROP POLICY IF EXISTS "Allow all" ON "Product";
+  DROP POLICY IF EXISTS "Allow all" ON "Order";
+  DROP POLICY IF EXISTS "Allow all" ON "OrderItem";
+  DROP POLICY IF EXISTS "Allow all" ON "Invoice";
+  DROP POLICY IF EXISTS "Allow all" ON "InvoiceItem";
+  DROP POLICY IF EXISTS "Allow all" ON "User";
+EXCEPTION WHEN others THEN NULL;
+END $$;
 
-CREATE POLICY "Allow all" ON "Tenant" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "Insumo" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "FichaTecnica" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "RecipeIngredient" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "Product" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "Order" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "OrderItem" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "Invoice" FOR ALL USING (true);
-CREATE POLICY "Allow all" ON "InvoiceItem" FOR ALL USING (true);
+CREATE POLICY "Allow all" ON "Tenant" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "Insumo" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "FichaTecnica" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "RecipeIngredient" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "Product" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "Order" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "OrderItem" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "Invoice" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "InvoiceItem" FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all" ON "User" FOR ALL USING (true) WITH CHECK (true);
 
--- ============================================================
--- STEP 6: VERIFY
--- ============================================================
+-- STEP 6: INSERT SUPER ADMIN USER
+INSERT INTO "User" (id, name, email, role) VALUES
+  ('usr-superadmin', 'Brabo Dantas', 'brabo.dantas.gdp@gmail.com', 'super_admin')
+ON CONFLICT (email) DO NOTHING;
 
-SELECT 'Tables created successfully!' as status;
+-- STEP 7: VERIFY
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;

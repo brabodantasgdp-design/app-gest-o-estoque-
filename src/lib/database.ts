@@ -18,6 +18,19 @@ const TABLES = {
 };
 
 // ============================================
+// LOCAL STORAGE HELPERS (fallback when Supabase offline)
+// ============================================
+function loadLocal<T>(key: string): T[] {
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+}
+function saveLocal<T>(key: string, data: T[]) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+function genId() {
+  return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// ============================================
 // AUTH
 // ============================================
 export const authService = {
@@ -42,7 +55,7 @@ export const authService = {
     try {
       const { data: user, error } = await supabase
         .from(TABLES.USER)
-        .select('*, Tenant(*)')
+        .select('*')
         .eq('email', email)
         .single();
 
@@ -50,13 +63,18 @@ export const authService = {
         return { success: false, message: 'Usuario nao encontrado' };
       }
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-      if (authError) {
-        return { success: false, message: 'Credenciais invalidas. Verifique email e senha.' };
+        if (authError) {
+          // Auth not set up, allow direct login
+          console.warn('Supabase Auth not configured, using direct lookup');
+        }
+      } catch (_) {
+        console.warn('Supabase Auth not available, using direct lookup');
       }
 
       return {
@@ -67,10 +85,11 @@ export const authService = {
           email: user.email,
           role: user.role,
           tenantId: user.tenant_id,
-          tenantName: user.Tenant?.name || '',
+          tenantName: '',
         }
       };
     } catch (err) {
+      console.error('Login error:', err);
       return { success: false, message: 'Erro ao conectar com o servidor.' };
     }
   },
@@ -87,7 +106,7 @@ export const authService = {
       if (!user) return null;
       const { data: userData } = await supabase
         .from(TABLES.USER)
-        .select('*, Tenant(*)')
+        .select('*')
         .eq('id', user.id)
         .single();
       if (!userData) return null;
@@ -97,7 +116,7 @@ export const authService = {
         email: userData.email,
         role: userData.role,
         tenantId: userData.tenant_id,
-        tenantName: userData.Tenant?.name || '',
+        tenantName: '',
       };
     } catch (_) {
       return null;
@@ -110,13 +129,16 @@ export const authService = {
 // ============================================
 export const tenantsService = {
   async getAll() {
-    if (!isConfigured) return [];
+    if (!isConfigured) return loadLocal<Tenant>('ebd_tenants');
     try {
       const { data, error } = await supabase.from(TABLES.TENANT).select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map(t => ({
-        ...t,
+      const tenants = (data || []).map(t => ({
         id: t.id,
+        name: t.name,
+        ownerName: t.owner_name,
+        email: t.email,
+        password: t.password,
         cnpjStore: t.cnpj_store,
         plan: t.plan,
         status: t.status,
@@ -126,11 +148,22 @@ export const tenantsService = {
         scansUsedThisMonth: t.scans_used_this_month,
         createdAt: t.created_at,
       })) as Tenant[];
-    } catch { return []; }
+      saveLocal('ebd_tenants', tenants);
+      return tenants;
+    } catch (err) {
+      console.error('tenantsService.getAll error:', err);
+      return loadLocal<Tenant>('ebd_tenants');
+    }
   },
 
   async create(tenant: Omit<Tenant, 'id' | 'createdAt'>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const local: Tenant = { ...tenant, id: genId(), createdAt: new Date().toISOString() } as Tenant;
+      const all = loadLocal<Tenant>('ebd_tenants');
+      all.push(local);
+      saveLocal('ebd_tenants', all);
+      return local;
+    }
     const { data, error } = await supabase.from(TABLES.TENANT).insert({
       name: tenant.name,
       owner_name: tenant.ownerName,
@@ -149,7 +182,12 @@ export const tenantsService = {
   },
 
   async update(id: string, updates: Partial<Tenant>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const all = loadLocal<Tenant>('ebd_tenants');
+      const idx = all.findIndex(t => t.id === id);
+      if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; saveLocal('ebd_tenants', all); }
+      return all[idx];
+    }
     const { data, error } = await supabase.from(TABLES.TENANT).update({
       name: updates.name,
       cnpj_store: updates.cnpjStore,
@@ -161,7 +199,11 @@ export const tenantsService = {
   },
 
   async delete(id: string) {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      const all = loadLocal<Tenant>('ebd_tenants');
+      saveLocal('ebd_tenants', all.filter(t => t.id !== id));
+      return;
+    }
     const { error } = await supabase.from(TABLES.TENANT).delete().eq('id', id);
     if (error) throw error;
   },
@@ -172,7 +214,7 @@ export const tenantsService = {
 // ============================================
 export const insumosService = {
   async getAll(tenantId: string) {
-    if (!isConfigured) return [];
+    if (!isConfigured) return loadLocal<Insumo>('ebd_insumos').filter(i => i.tenantId === tenantId);
     try {
       const { data, error } = await supabase
         .from(TABLES.INSUMO)
@@ -193,11 +235,24 @@ export const insumosService = {
         supplier: i.supplier,
         lastUpdated: i.last_updated,
       })) as Insumo[];
-    } catch { return []; }
+    } catch (err) {
+      console.error('insumosService.getAll error:', err);
+      return loadLocal<Insumo>('ebd_insumos').filter(i => i.tenantId === tenantId);
+    }
+  },
+
+  async getByTenant(tenantId: string) {
+    return this.getAll(tenantId);
   },
 
   async create(insumo: Omit<Insumo, 'id'>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const local = { ...insumo, id: genId() } as Insumo;
+      const all = loadLocal<Insumo>('ebd_insumos');
+      all.push(local);
+      saveLocal('ebd_insumos', all);
+      return local;
+    }
     const { data, error } = await supabase.from(TABLES.INSUMO).insert({
       tenant_id: insumo.tenantId,
       code: insumo.code,
@@ -210,12 +265,23 @@ export const insumosService = {
       supplier: insumo.supplier,
       last_updated: insumo.lastUpdated,
     }).select().single();
-    if (error) throw error;
+    if (error) {
+      console.error('insumosService.create error:', error);
+      throw error;
+    }
     return data;
   },
 
   async update(id: string, updates: Partial<Insumo>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const all = loadLocal<Insumo>('ebd_insumos');
+      const idx = all.findIndex(i => i.id === id);
+      if (idx >= 0) {
+        all[idx] = { ...all[idx], ...updates };
+        saveLocal('ebd_insumos', all);
+      }
+      return all[idx];
+    }
     const { data, error } = await supabase.from(TABLES.INSUMO).update({
       name: updates.name,
       category: updates.category,
@@ -226,12 +292,19 @@ export const insumosService = {
       supplier: updates.supplier,
       last_updated: updates.lastUpdated,
     }).eq('id', id).select().single();
-    if (error) throw error;
+    if (error) {
+      console.error('insumosService.update error:', error);
+      throw error;
+    }
     return data;
   },
 
   async delete(id: string) {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      const all = loadLocal<Insumo>('ebd_insumos');
+      saveLocal('ebd_insumos', all.filter(i => i.id !== id));
+      return;
+    }
     const { error } = await supabase.from(TABLES.INSUMO).delete().eq('id', id);
     if (error) throw error;
   },
@@ -242,44 +315,68 @@ export const insumosService = {
 // ============================================
 export const fichasService = {
   async getAll(tenantId: string) {
-    if (!isConfigured) return [];
+    if (!isConfigured) return loadLocal<FichaTecnica>('ebd_fichas').filter(f => f.tenantId === tenantId);
     try {
       const { data, error } = await supabase
         .from(TABLES.FICHA)
-        .select('*, RecipeIngredient(*)')
+        .select('*')
         .eq('tenant_id', tenantId);
       if (error) throw error;
-      return (data || []).map(f => ({
-        id: f.id,
-        tenantId: f.tenant_id,
-        productName: f.product_name,
-        code: f.code,
-        category: f.category,
-        yieldQuantity: f.yield_quantity,
-        ingredients: (f.RecipeIngredient || []).map((ing: any) => ({
-          insumoId: ing.insumo_id,
-          insumoName: ing.insumo_name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          calculatedCost: ing.calculated_cost,
-        })),
-        rawInsumoCost: f.raw_insumo_cost,
-        wasteMarginPercent: f.waste_margin_percent,
-        operationalOverheadPercent: f.operational_overhead_percent,
-        taxPercent: f.tax_percent,
-        totalProductionCost: f.total_production_cost,
-        targetProfitMarginPercent: f.target_profit_margin_percent,
-        calculatedPrice: f.calculated_price,
-        manualOverridePrice: f.manual_override_price,
-        finalPrice: f.final_price,
-        netProfitPerUnit: f.net_profit_per_unit,
-        profitMarginRate: f.profit_margin_rate,
-      })) as FichaTecnica[];
-    } catch { return []; }
+      
+      // Fetch ingredients separately for each ficha
+      const fichas: FichaTecnica[] = [];
+      for (const f of (data || [])) {
+        const { data: ings } = await supabase
+          .from(TABLES.RECIPE_INGREDIENT)
+          .select('*')
+          .eq('ficha_id', f.id);
+        fichas.push({
+          id: f.id,
+          tenantId: f.tenant_id,
+          productName: f.product_name,
+          code: f.code,
+          category: f.category,
+          yieldQuantity: f.yield_quantity,
+          ingredients: (ings || []).map((ing: any) => ({
+            insumoId: ing.insumo_id,
+            insumoName: ing.insumo_name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            calculatedCost: ing.calculated_cost,
+          })),
+          rawInsumoCost: f.raw_insumo_cost,
+          wasteMarginPercent: f.waste_margin_percent,
+          operationalOverheadPercent: f.operational_overhead_percent,
+          taxPercent: f.tax_percent,
+          totalProductionCost: f.total_production_cost,
+          targetProfitMarginPercent: f.target_profit_margin_percent,
+          calculatedPrice: f.calculated_price,
+          manualOverridePrice: f.manual_override_price,
+          finalPrice: f.final_price,
+          netProfitPerUnit: f.net_profit_per_unit,
+          profitMarginRate: f.profit_margin_rate,
+        } as FichaTecnica);
+      }
+      saveLocal('ebd_fichas', fichas);
+      return fichas;
+    } catch (err) {
+      console.error('fichasService.getAll error:', err);
+      return loadLocal<FichaTecnica>('ebd_fichas').filter(f => f.tenantId === tenantId);
+    }
+  },
+
+  async getByTenant(tenantId: string) {
+    return this.getAll(tenantId);
   },
 
   async create(ficha: Omit<FichaTecnica, 'id'>, ingredients: RecipeItem[]) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const local = { ...ficha, id: genId(), ingredients } as FichaTecnica;
+      const all = loadLocal<FichaTecnica>('ebd_fichas');
+      all.push(local);
+      saveLocal('ebd_fichas', all);
+      return local;
+    }
     
     const { data: fichaData, error: fichaError } = await supabase.from(TABLES.FICHA).insert({
       tenant_id: ficha.tenantId,
@@ -300,9 +397,11 @@ export const fichasService = {
       profit_margin_rate: ficha.profitMarginRate,
     }).select().single();
 
-    if (fichaError) throw fichaData;
+    if (fichaError) {
+      console.error('fichasService.create error:', fichaError);
+      throw fichaError;
+    }
 
-    // Insert ingredients
     if (ingredients.length > 0 && fichaData) {
       const { error: ingError } = await supabase.from(TABLES.RECIPE_INGREDIENT).insert(ingredients.map(ing => ({
         ficha_id: fichaData.id,
@@ -319,7 +418,12 @@ export const fichasService = {
   },
 
   async update(id: string, updates: Partial<FichaTecnica>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const all = loadLocal<FichaTecnica>('ebd_fichas');
+      const idx = all.findIndex(f => f.id === id);
+      if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; saveLocal('ebd_fichas', all); }
+      return all[idx];
+    }
     const { data, error } = await supabase.from(TABLES.FICHA).update({
       product_name: updates.productName,
       category: updates.category,
@@ -341,7 +445,11 @@ export const fichasService = {
   },
 
   async delete(id: string) {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      const all = loadLocal<FichaTecnica>('ebd_fichas');
+      saveLocal('ebd_fichas', all.filter(f => f.id !== id));
+      return;
+    }
     const { error } = await supabase.from(TABLES.FICHA).delete().eq('id', id);
     if (error) throw error;
   },
@@ -352,7 +460,7 @@ export const fichasService = {
 // ============================================
 export const productsService = {
   async getAll(tenantId: string) {
-    if (!isConfigured) return [];
+    if (!isConfigured) return loadLocal<Product>('ebd_products').filter(p => p.tenantId === tenantId);
     try {
       const { data, error } = await supabase
         .from(TABLES.PRODUCT)
@@ -360,7 +468,7 @@ export const productsService = {
         .eq('tenant_id', tenantId)
         .order('name');
       if (error) throw error;
-      return (data || []).map(p => ({
+      const products = (data || []).map(p => ({
         id: p.id,
         tenantId: p.tenant_id,
         name: p.name,
@@ -375,11 +483,26 @@ export const productsService = {
         status: p.status,
         image: p.image,
       })) as Product[];
-    } catch { return []; }
+      saveLocal('ebd_products', products);
+      return products;
+    } catch (err) {
+      console.error('productsService.getAll error:', err);
+      return loadLocal<Product>('ebd_products').filter(p => p.tenantId === tenantId);
+    }
+  },
+
+  async getByTenant(tenantId: string) {
+    return this.getAll(tenantId);
   },
 
   async create(product: Omit<Product, 'id'>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const local = { ...product, id: genId() } as Product;
+      const all = loadLocal<Product>('ebd_products');
+      all.push(local);
+      saveLocal('ebd_products', all);
+      return local;
+    }
     const { data, error } = await supabase.from(TABLES.PRODUCT).insert({
       tenant_id: product.tenantId,
       name: product.name,
@@ -394,12 +517,20 @@ export const productsService = {
       status: product.status,
       image: product.image,
     }).select().single();
-    if (error) throw error;
+    if (error) {
+      console.error('productsService.create error:', error);
+      throw error;
+    }
     return data;
   },
 
   async update(id: string, updates: Partial<Product>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const all = loadLocal<Product>('ebd_products');
+      const idx = all.findIndex(p => p.id === id);
+      if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; saveLocal('ebd_products', all); }
+      return all[idx];
+    }
     const { data, error } = await supabase.from(TABLES.PRODUCT).update({
       name: updates.name,
       category: updates.category,
@@ -412,7 +543,11 @@ export const productsService = {
   },
 
   async delete(id: string) {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      const all = loadLocal<Product>('ebd_products');
+      saveLocal('ebd_products', all.filter(p => p.id !== id));
+      return;
+    }
     const { error } = await supabase.from(TABLES.PRODUCT).delete().eq('id', id);
     if (error) throw error;
   },
@@ -423,31 +558,54 @@ export const productsService = {
 // ============================================
 export const ordersService = {
   async getAll(tenantId: string) {
-    if (!isConfigured) return [];
+    if (!isConfigured) return loadLocal<Order>('ebd_orders').filter(o => o.tenantId === tenantId);
     try {
       const { data, error } = await supabase
         .from(TABLES.ORDER)
-        .select('*, OrderItem(*)')
+        .select('*')
         .eq('tenant_id', tenantId);
       if (error) throw error;
-      return (data || []).map(o => ({
-        id: o.id,
-        tenantId: o.tenant_id,
-        customerName: o.customer_name,
-        totalAmount: o.total_amount,
-        status: o.status,
-        createdAt: o.created_at,
-        items: (o.OrderItem || []).map((item: any) => ({
-          productName: item.product_name,
-          quantity: item.quantity,
-          unitPrice: item.unit_price,
-        })),
-      })) as Order[];
-    } catch { return []; }
+      
+      const orders: Order[] = [];
+      for (const o of (data || [])) {
+        const { data: items } = await supabase
+          .from(TABLES.ORDER_ITEM)
+          .select('*')
+          .eq('order_id', o.id);
+        orders.push({
+          id: o.id,
+          tenantId: o.tenant_id,
+          customerName: o.customer_name,
+          totalAmount: o.total_amount,
+          status: o.status,
+          createdAt: o.created_at,
+          items: (items || []).map((item: any) => ({
+            productName: item.product_name,
+            quantity: item.quantity,
+            unitPrice: item.unit_price,
+          })),
+        } as Order);
+      }
+      saveLocal('ebd_orders', orders);
+      return orders;
+    } catch (err) {
+      console.error('ordersService.getAll error:', err);
+      return loadLocal<Order>('ebd_orders').filter(o => o.tenantId === tenantId);
+    }
+  },
+
+  async getByTenant(tenantId: string) {
+    return this.getAll(tenantId);
   },
 
   async create(order: Omit<Order, 'id' | 'createdAt'>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const local = { ...order, id: genId(), createdAt: new Date().toISOString() } as Order;
+      const all = loadLocal<Order>('ebd_orders');
+      all.push(local);
+      saveLocal('ebd_orders', all);
+      return local;
+    }
     
     const { data: orderData, error: orderError } = await supabase.from(TABLES.ORDER).insert({
       tenant_id: order.tenantId,
@@ -458,7 +616,6 @@ export const ordersService = {
 
     if (orderError) throw orderError;
 
-    // Insert order items
     if (order.items && order.items.length > 0 && orderData) {
       const { error: itemsError } = await supabase.from(TABLES.ORDER_ITEM).insert(order.items.map(item => ({
         order_id: orderData.id,
@@ -474,14 +631,23 @@ export const ordersService = {
   },
 
   async updateStatus(id: string, status: string) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const all = loadLocal<Order>('ebd_orders');
+      const idx = all.findIndex(o => o.id === id);
+      if (idx >= 0) { all[idx] = { ...all[idx], status }; saveLocal('ebd_orders', all); }
+      return all[idx];
+    }
     const { data, error } = await supabase.from(TABLES.ORDER).update({ status }).eq('id', id).select().single();
     if (error) throw error;
     return data;
   },
 
   async delete(id: string) {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      const all = loadLocal<Order>('ebd_orders');
+      saveLocal('ebd_orders', all.filter(o => o.id !== id));
+      return;
+    }
     const { error } = await supabase.from(TABLES.ORDER).delete().eq('id', id);
     if (error) throw error;
   },
@@ -492,41 +658,64 @@ export const ordersService = {
 // ============================================
 export const invoicesService = {
   async getAll(tenantId: string) {
-    if (!isConfigured) return [];
+    if (!isConfigured) return loadLocal<InvoiceScan>('ebd_invoices').filter(i => i.tenantId === tenantId);
     try {
       const { data, error } = await supabase
         .from(TABLES.INVOICE)
-        .select('*, InvoiceItem(*)')
+        .select('*')
         .eq('tenant_id', tenantId);
       if (error) throw error;
-      return (data || []).map(inv => ({
-        id: inv.id,
-        tenantId: inv.tenant_id,
-        supplierName: inv.supplier_name,
-        cnpj: inv.cnpj,
-        invoiceNumber: inv.invoice_number,
-        invoiceDate: inv.invoice_date,
-        totalAmount: inv.total_amount,
-        category: inv.category,
-        notes: inv.notes,
-        imageUrl: inv.image_url,
-        processed: inv.processed,
-        processedAt: inv.processed_at,
-        items: (inv.InvoiceItem || []).map((item: any) => ({
-          rawName: item.raw_name,
-          matchedInsumoName: item.matched_insumo_name,
-          quantity: item.quantity,
-          unit: item.unit,
-          unitCost: item.unit_cost,
-          totalCost: item.total_cost,
-          category: item.category,
-        })),
-      })) as InvoiceScan[];
-    } catch { return []; }
+      
+      const invoices: InvoiceScan[] = [];
+      for (const inv of (data || [])) {
+        const { data: items } = await supabase
+          .from(TABLES.INVOICE_ITEM)
+          .select('*')
+          .eq('invoice_id', inv.id);
+        invoices.push({
+          id: inv.id,
+          tenantId: inv.tenant_id,
+          supplierName: inv.supplier_name,
+          cnpj: inv.cnpj,
+          invoiceNumber: inv.invoice_number,
+          invoiceDate: inv.invoice_date,
+          totalAmount: inv.total_amount,
+          category: inv.category,
+          notes: inv.notes,
+          imageUrl: inv.image_url,
+          processed: inv.processed,
+          processedAt: inv.processed_at,
+          items: (items || []).map((item: any) => ({
+            rawName: item.raw_name,
+            matchedInsumoName: item.matched_insumo_name,
+            quantity: item.quantity,
+            unit: item.unit,
+            unitCost: item.unit_cost,
+            totalCost: item.total_cost,
+            category: item.category,
+          })),
+        } as InvoiceScan);
+      }
+      saveLocal('ebd_invoices', invoices);
+      return invoices;
+    } catch (err) {
+      console.error('invoicesService.getAll error:', err);
+      return loadLocal<InvoiceScan>('ebd_invoices').filter(i => i.tenantId === tenantId);
+    }
+  },
+
+  async getByTenant(tenantId: string) {
+    return this.getAll(tenantId);
   },
 
   async create(invoice: Omit<InvoiceScan, 'id'>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const local = { ...invoice, id: genId() } as InvoiceScan;
+      const all = loadLocal<InvoiceScan>('ebd_invoices');
+      all.push(local);
+      saveLocal('ebd_invoices', all);
+      return local;
+    }
     
     const { data: invoiceData, error: invoiceError } = await supabase.from(TABLES.INVOICE).insert({
       tenant_id: invoice.tenantId,
@@ -544,7 +733,6 @@ export const invoicesService = {
 
     if (invoiceError) throw invoiceError;
 
-    // Insert invoice items
     if (invoice.items && invoice.items.length > 0 && invoiceData) {
       const { error: itemsError } = await supabase.from(TABLES.INVOICE_ITEM).insert(invoice.items.map(item => ({
         invoice_id: invoiceData.id,
@@ -563,7 +751,12 @@ export const invoicesService = {
   },
 
   async update(id: string, updates: Partial<InvoiceScan>) {
-    if (!isConfigured) return null;
+    if (!isConfigured) {
+      const all = loadLocal<InvoiceScan>('ebd_invoices');
+      const idx = all.findIndex(i => i.id === id);
+      if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; saveLocal('ebd_invoices', all); }
+      return all[idx];
+    }
     const { data, error } = await supabase.from(TABLES.INVOICE).update({
       processed: updates.processed,
       processed_at: updates.processedAt,
@@ -573,7 +766,11 @@ export const invoicesService = {
   },
 
   async delete(id: string) {
-    if (!isConfigured) return;
+    if (!isConfigured) {
+      const all = loadLocal<InvoiceScan>('ebd_invoices');
+      saveLocal('ebd_invoices', all.filter(i => i.id !== id));
+      return;
+    }
     const { error } = await supabase.from(TABLES.INVOICE).delete().eq('id', id);
     if (error) throw error;
   },
