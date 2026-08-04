@@ -80,12 +80,22 @@ export interface LiveAgentConfig {
 // AGENT ENGINE
 // ============================================================
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export class LiveAgent {
   private config: LiveAgentConfig;
-  private recognition: any = null;
   private ctx: SupabaseContext | null = null;
   private proactiveTimer: ReturnType<typeof setInterval> | null = null;
   private proactiveInterval: number;
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: Blob[] = [];
 
   state: LiveAgentState = {
     status: "idle", transcript: "", response: "", lastAction: "", error: null, proactiveAlert: null,
@@ -94,7 +104,6 @@ export class LiveAgent {
   constructor(config: LiveAgentConfig) {
     this.config = config;
     this.proactiveInterval = config.proactiveInterval || 120000;
-    this.setupRecognition();
     if (config.context) this.setContext(config.context);
   }
 
@@ -114,103 +123,75 @@ export class LiveAgent {
   }
 
   stop() {
-    this.recognition?.abort();
+    this.stopListening();
     window.speechSynthesis?.cancel();
     this.stopProactive();
     this.update({ status: "idle" });
   }
 
   // ============================================================
-  // SPEECH RECOGNITION
+  // AUDIO RECORDING (MediaRecorder → Gemini multimodal)
   // ============================================================
 
-  private setupRecognition() {
-    if (typeof window === "undefined") return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      console.warn("[EBD] SpeechRecognition not available in this browser");
-      return;
-    }
+  async startListening() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus" : "audio/webm";
 
-    console.log("[EBD] SpeechRecognition supported, setting up...");
-    this.recognition = new SR();
-    this.recognition.lang = "pt-BR";
-    this.recognition.continuous = false;
-    this.recognition.interimResults = false;
+      this.audioChunks = [];
+      this.mediaRecorder = new MediaRecorder(stream, { mimeType });
 
-    this.recognition.onstart = () => {
-      console.log("[EBD] Recognition started");
-    };
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) this.audioChunks.push(e.data);
+      };
 
-    this.recognition.onresult = (event: any) => {
-      const text = event.results[0][0].transcript;
-      console.log("[EBD] Heard:", text);
-      this.update({ status: "thinking", transcript: text });
-      this.processVoice(text);
-    };
+      this.mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (this.audioChunks.length === 0) return;
+        const blob = new Blob(this.audioChunks, { type: mimeType });
+        await this.processAudio(blob);
+      };
 
-    this.recognition.onerror = (event: any) => {
-      console.error("[EBD] Recognition error:", event.error, event.message);
-      if (event.error === "not-allowed") {
-        this.update({ status: "error", error: "Microfone bloqueado. Permita no navegador." });
-      } else if (event.error !== "aborted" && event.error !== "no-speech") {
-        this.update({ status: "error", error: `Mic: ${event.error}` });
-      }
-      if (this.state.status === "listening") {
-        this.update({ status: "idle" });
-      }
-    };
-
-    this.recognition.onend = () => {
-      console.log("[EBD] Recognition ended");
-      if (this.state.status === "listening") this.update({ status: "idle" });
-    };
-  }
-
-  startListening() {
-    if (!this.recognition) {
-      const isChrome = !!(window as any).chrome;
-      const msg = isChrome
-        ? "Microfone não disponível. Verifique as permissões do site."
-        : "Seu navegador não suporta voz. Use o Chrome.";
-      this.update({ status: "error", error: msg });
-      console.error("[EBD]", msg);
-      return;
-    }
-    this.update({ status: "listening", transcript: "", response: "", error: null });
-    try { this.recognition.start(); } catch (e: any) {
-      console.error("[EBD] start() failed:", e);
-      this.update({ status: "error", error: "Erro ao iniciar microfone." });
+      this.mediaRecorder.start();
+      this.update({ status: "listening", transcript: "Ouvindo...", response: "", error: null });
+    } catch (e: any) {
+      console.error("[EBD] Mic error:", e);
+      this.update({ status: "error", error: "Microfone bloqueado. Permita no navegador." });
     }
   }
 
   stopListening() {
-    this.recognition?.stop();
+    if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
+      this.mediaRecorder.stop();
+    }
   }
 
-  // ============================================================
-  // PROCESS VOICE → GEMINI → ACTION → SPEAK
-  // ============================================================
-
-  private async processVoice(text: string) {
+  private async processAudio(blob: Blob) {
+    this.update({ status: "thinking" });
     try {
-      // Round 1: Send user text to server, get Gemini response + function calls
-      const res1 = await fetch("/api/ebdAi/agent", {
+      const base64 = await blobToBase64(blob);
+      const mimeType = blob.type || "audio/webm";
+
+      const res = await fetch("/api/ebdAi/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text }] }],
+          contents: [{
+            role: "user",
+            parts: [{ inlineData: { mimeType, data: base64 } }],
+          }],
           systemInstruction: SYSTEM_PROMPT,
           tools: TOOLS,
         }),
       });
-      if (!res1.ok) throw new Error(`Server error: ${res1.status}`);
-      const data1 = await res1.json();
 
-      let responseText = data1.text || "";
-      const functionCalls: any[] = data1.functionCalls || [];
+      if (!res.ok) throw new Error(`Server ${res.status}`);
+      const data = await res.json();
+      let responseText = data.text || "";
+      const functionCalls: any[] = data.functionCalls || [];
 
-      // Execute function calls against Supabase
+      // Execute tools
       const results: any[] = [];
       for (const fc of functionCalls) {
         try {
@@ -222,14 +203,14 @@ export class LiveAgent {
         }
       }
 
-      // Round 2: Send function results back to Gemini for final spoken response
+      // Round 2: send tool results back for final response
       if (results.length > 0) {
         const res2 = await fetch("/api/ebdAi/agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [
-              { role: "user", parts: [{ text }] },
+              { role: "user", parts: [{ inlineData: { mimeType, data: base64 } }] },
               ...functionCalls.map((fc: any) => ({ role: "model", parts: [{ functionCall: fc }] })),
               { role: "user", parts: results.map((r: any) => ({
                 functionResponse: { name: r.name, response: r.error ? { error: r.error } : { result: r.result } },
@@ -251,11 +232,9 @@ export class LiveAgent {
         this.speak(responseText);
       }
     } catch (err: any) {
-      console.error("[EBD] Process error:", err);
-      this.speak("Erro ao processar. Tente de novo.");
+      console.error("[EBD] Audio process error:", err);
+      this.speak("Erro ao processar áudio.");
       this.update({ status: "error", error: err.message });
-    } finally {
-      this.update({ status: "idle" });
     }
   }
 
@@ -381,14 +360,6 @@ export class LiveAgent {
     window.speechSynthesis.speak(u);
   }
 
-  // ============================================================
-  // TEXT INPUT
-  // ============================================================
-
-  async sendText(text: string) {
-    this.update({ transcript: text, status: "thinking" });
-    await this.processVoice(text);
-  }
 }
 
 export function createLiveAgent(config: LiveAgentConfig): LiveAgent {
