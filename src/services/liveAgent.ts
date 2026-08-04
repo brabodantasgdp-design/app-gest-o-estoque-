@@ -1,274 +1,57 @@
-/**
- * EBD LiveAgent v2 — Universal Voice Agent Module
- *
- * Drop into any web app:
- *   import { createLiveAgent } from "./liveAgent";
- *   const agent = createLiveAgent({ apiKey: "...", context: {...}, onState: (s) => {} });
- *   agent.start();
- *
- * Features:
- *   - Gemini Live WebSocket (gemini-live-2.5-flash-preview)
- *   - Zod parameter validation on all tool calls
- *   - Proactive stock monitoring (background polling)
- *   - Conversation memory (localStorage, context injection)
- *   - Humanized voice personality
- *   - Offline fallback (local regex parser + rule engine)
- *   - Auto-reconnect with exponential backoff
- *   - Tenant-isolated Supabase operations
- */
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 
 // ============================================================
-// ZOD SCHEMAS — Validação estrita de todas as entradas
+// ZOD SCHEMAS
 // ============================================================
 
-const InventoryQuerySchema = z.object({
-  item_name: z.string().optional(),
-});
-
+const InventoryQuerySchema = z.object({ item_name: z.string().optional() });
 const InventoryRegisterSchema = z.object({
-  name: z.string().min(2, "Nome muito curto"),
-  quantity: z.number().positive("Quantidade deve ser positiva"),
+  name: z.string().min(2), quantity: z.number().positive(),
   unit: z.enum(["g", "ml", "un"]),
-  unitCost: z.number().min(0).optional(),
-  supplier: z.string().optional(),
-  category: z.string().optional(),
-  minStock: z.number().min(0).optional(),
+  unitCost: z.number().min(0).optional(), supplier: z.string().optional(),
+  category: z.string().optional(), minStock: z.number().min(0).optional(),
 });
-
-const InventoryAddSchema = z.object({
-  item_name: z.string().min(2),
-  quantity: z.number().positive(),
-  unit: z.enum(["g", "ml", "un"]).optional(),
-});
-
-const InventoryRemoveSchema = z.object({
-  item_name: z.string().min(2),
-  quantity: z.number().positive(),
-  unit: z.enum(["g", "ml", "un"]).optional(),
-});
-
-const ReportSummarySchema = z.object({
-  type: z.enum(["resumo", "estoque", "produtos", "vendas"]).optional(),
-});
-
-const ProductCreateSchema = z.object({
-  name: z.string().min(2),
-  price: z.number().positive(),
-  category: z.string().optional(),
-});
+const InventoryAddSchema = z.object({ item_name: z.string().min(2), quantity: z.number().positive() });
+const InventoryRemoveSchema = z.object({ item_name: z.string().min(2), quantity: z.number().positive() });
+const ReportSummarySchema = z.object({ type: z.enum(["resumo", "estoque", "produtos"]).optional() });
+const ProductCreateSchema = z.object({ name: z.string().min(2), price: z.number().positive(), category: z.string().optional() });
 
 // ============================================================
-// TOOLS — Gemini Function Declarations
+// TOOLS
 // ============================================================
 
 const TOOLS = [{
-  functionDeclarations: [{
-    name: "inventory_query",
-    description: "Consultar estoque: item específico ou lista completa. Use quando perguntarem 'quanto tem de X' ou 'estoque'.",
-    parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING } } },
-  }, {
-    name: "inventory_register",
-    description: "Cadastrar novo insumo no estoque. Use para: cadastrar, criar, registrar insumo/ingrediente.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        name: { type: Type.STRING, description: "Nome do insumo" },
-        quantity: { type: Type.NUMBER, description: "Quantidade inicial (converta kg→g multiplicando por 1000, L→ml por 1000)" },
-        unit: { type: Type.STRING, description: "Unidade: g, ml ou un" },
-        unitCost: { type: Type.NUMBER, description: "Custo unitário por grama/ml/unidade" },
-        supplier: { type: Type.STRING },
-        category: { type: Type.STRING },
-        minStock: { type: Type.NUMBER, description: "Estoque mínimo para alerta" },
-      },
-      required: ["name", "quantity", "unit"],
-    },
-  }, {
-    name: "inventory_add",
-    description: "Adicionar ao estoque (entrada). Use quando: entrou, chegou, recebeu, comprou, adicionou.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        item_name: { type: Type.STRING, description: "Nome exato do insumo" },
-        quantity: { type: Type.NUMBER, description: "Quantidade (kg→g *1000, L→ml *1000)" },
-        unit: { type: Type.STRING },
-      },
-      required: ["item_name", "quantity"],
-    },
-  }, {
-    name: "inventory_remove",
-    description: "Remover do estoque (saída). Use quando: usou, gastou, consumiu, removeu, tirou, baixou.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        item_name: { type: Type.STRING, description: "Nome exato do insumo" },
-        quantity: { type: Type.NUMBER, description: "Quantidade (kg→g *1000, L→ml *1000)" },
-        unit: { type: Type.STRING },
-      },
-      required: ["item_name", "quantity"],
-    },
-  }, {
-    name: "inventory_alert",
-    description: "Verificar alertas de estoque: baixo, crítico ou zerado. Use quando perguntarem de problemas, alertas, ou disserem 'estoque baixo'.",
-    parameters: { type: Type.OBJECT, properties: {} },
-  }, {
-    name: "report_summary",
-    description: "Relatório rápido: visão geral do negócio. Use para: resumo, relatório, dashboard, como está/tá o negócio/loja.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: { type: { type: Type.STRING, description: "resumo, estoque, produtos ou vendas" } },
-    },
-  }, {
-    name: "product_create",
-    description: "Criar produto no catálogo. Use para: criar/cadastrar produto, novo item, adicionar ao cardápio.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        name: { type: Type.STRING, description: "Nome do produto" },
-        price: { type: Type.NUMBER, description: "Preço de venda em reais" },
-        category: { type: Type.STRING },
-      },
-      required: ["name", "price"],
-    },
-  }],
+  functionDeclarations: [
+    { name: "inventory_query", description: "Consultar estoque. Use para: quanto tem de X, estoque de Y, lista de insumos.", parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING } } } },
+    { name: "inventory_register", description: "Cadastrar insumo novo. Use para: cadastrar, criar, registrar.", parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, unitCost: { type: Type.NUMBER }, supplier: { type: Type.STRING }, category: { type: Type.STRING } }, required: ["name", "quantity", "unit"] } },
+    { name: "inventory_add", description: "Adicionar estoque. Use para: entrou, chegou, recebeu, adicionou.", parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING }, quantity: { type: Type.NUMBER } }, required: ["item_name", "quantity"] } },
+    { name: "inventory_remove", description: "Remover estoque. Use para: usou, gastou, removeu, consumiu.", parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING }, quantity: { type: Type.NUMBER } }, required: ["item_name", "quantity"] } },
+    { name: "inventory_alert", description: "Verificar alertas de estoque baixo/crítico/zerado.", parameters: { type: Type.OBJECT, properties: {} } },
+    { name: "report_summary", description: "Relatório rápido do negócio. Use para: resumo, como tá o negócio.", parameters: { type: Type.OBJECT, properties: { type: { type: Type.STRING } } } },
+    { name: "product_create", description: "Criar produto novo. Use para: criar produto, cadastrar item.", parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, price: { type: Type.NUMBER }, category: { type: Type.STRING } }, required: ["name", "price"] } },
+  ],
 }];
 
-const SYSTEM_INSTRUCTION = `
-Você é a EBD, assistente de voz do RetailPro. Você é o FUNCIONÁRIO PERFEITO.
-
-## QUEM VOCÊ É
-- Nome: EBD (ElBravoDantas)
-- Tom: direto, rápido, profissional, levemente informal. Como um braço direito de confiança.
-- Varie suas respostas. Não repita sempre a mesma frase.
-- Seja CONCISO. Máximo 3 frases. Você fala por voz, não escreve textão.
-- Sempre em português do Brasil.
-- Trate o usuário como "chefe" ou pelo nome "Brabo".
-- Após cada ação, CONFIRME com os números exatos.
-
-## COMPORTAMENTO PROATIVO
-- Se detectar estoque baixo (< mínimo), alerte IMEDIATAMENTE e sugira reposição.
-- Se detectar estoque zerado, alerte com URGÊNCIA.
-- Se alguém remover e o estoque ficar baixo, AVISE.
-- Pense um passo à frente: o que o chefe precisa saber AGORA?
-
-## REGRAS DE EXECUÇÃO
-- SEMPRE execute a ferramenta correta ANTES de responder.
-- Converta automaticamente: "5kg" = 5000g, "2 litros" = 2000ml.
-- O sistema usa g (gramas), ml (mililitros), un (unidades).
-- JAMAIS invente dados. Use o que a ferramenta retornou.
-- Se uma ferramenta falhar, diga claramente o que deu errado.
-
-## TOM DE VOZ
-- Seja natural. Não soe como robô.
-- Use contrações: "tá", "pronto", "beleza", "feito".
-- Às vezes comece com "Chefe," ou "Brabo,".
-- Varie entre frases curtas e confirmações diretas.
-`.trim();
-
-// ============================================================
-// OFFLINE PARSER — Quando Gemini está offline
-// ============================================================
-
-interface ParsedIntent {
-  tool: string;
-  args: Record<string, any>;
-  confidence: number;
-}
-
-function offlineParse(text: string): ParsedIntent {
-  const lower = text.toLowerCase();
-
-  // Cadastrar: "cadastrar farinha 5000g preço 0.05"
-  const registerMatch = lower.match(/(?:cadastrar?|criar|novo|cadastra)\s+(?:insumo|item|ingrediente)?\s*(.+?)(?:\s+(\d+\.?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[çc]o|custo|por|a)\s*r?\$?\s*(\d+[\.,]?\d*))?(?:\s+(?:fornecedor|de|do)\s+(.+?))?$/);
-  if (registerMatch) {
-    const name = registerMatch[1]?.trim();
-    const rawQty = registerMatch[2];
-    const rawUnit = registerMatch[3];
-    const rawPrice = registerMatch[4];
-    const supplier = registerMatch[5]?.trim();
-    if (!name || name.length < 2) return { tool: "unknown", args: {}, confidence: 0 };
-
-    const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
-    const unit = rawUnit === "kg" ? "g" : rawUnit === "l" ? "ml" : (rawUnit as "g" | "ml" | "un" || "g");
-    return {
-      tool: "inventory_register",
-      args: {
-        name,
-        quantity: rawQty ? parseFloat(rawQty) * factor : 0,
-        unit,
-        unitCost: rawPrice ? parseFloat(rawPrice.replace(",", ".")) : undefined,
-        supplier: supplier || undefined,
-      },
-      confidence: 0.75,
-    };
-  }
-
-  // Adicionar: "adicionar 5kg de farinha", "entrou 200g de açúcar"
-  const addMatch = lower.match(/(?:adicione?|adicionar|entrou|chegou|recebi|somou?|coloca|bota)\s+(\d+\.?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
-  if (addMatch) {
-    const rawQty = parseFloat(addMatch[1]);
-    const rawUnit = addMatch[2];
-    const name = addMatch[3]?.trim();
-    if (!name) return { tool: "unknown", args: {}, confidence: 0 };
-    const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
-    const unit = rawUnit === "kg" ? "g" : rawUnit === "l" ? "ml" : (rawUnit as "g" | "ml" | "un" || "g");
-    return { tool: "inventory_add", args: { item_name: name, quantity: rawQty * factor, unit }, confidence: 0.8 };
-  }
-
-  // Remover: "gastei 200g de farinha", "usei 1L de leite"
-  const removeMatch = lower.match(/(?:remove?|remover|tirar|diminuir|baixar|gastou?|gastei|usou?|usei|consumiu|perdi|saiu)\s+(\d+\.?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
-  if (removeMatch) {
-    const rawQty = parseFloat(removeMatch[1]);
-    const rawUnit = removeMatch[2];
-    const name = removeMatch[3]?.trim();
-    if (!name) return { tool: "unknown", args: {}, confidence: 0 };
-    const factor = rawUnit === "kg" ? 1000 : rawUnit === "l" ? 1000 : 1;
-    const unit = rawUnit === "kg" ? "g" : rawUnit === "l" ? "ml" : (rawUnit as "g" | "ml" | "un" || "g");
-    return { tool: "inventory_remove", args: { item_name: name, quantity: rawQty * factor, unit }, confidence: 0.8 };
-  }
-
-  // Relatório / resumo
-  if (/(?:resumo|relat[oó]rio|dashboard|como\s+(?:est[aá]|t[aá])\s+(?:o\s+)?(?:neg[oó]cio|estoque|loja|empresa))/i.test(lower)) {
-    return { tool: "report_summary", args: { type: "resumo" }, confidence: 0.85 };
-  }
-
-  // Alertas
-  if (/(?:alerta|estoque\s+baixo|cr[ií]tico|problema|zerado|acabou|sem\s+estoque)/i.test(lower)) {
-    return { tool: "inventory_alert", args: {}, confidence: 0.85 };
-  }
-
-  // Consulta: "quanto tem de farinha"
-  const queryMatch = lower.match(/(?:quanto|qual|estoque|consultar?)\s+(?:tem|tenho|est[aá])?\s*(?:de|do|da)?\s*(.+)/);
-  if (queryMatch) {
-    return { tool: "inventory_query", args: { item_name: queryMatch[1]?.trim() }, confidence: 0.7 };
-  }
-
-  // Criar produto
-  const productMatch = lower.match(/(?:criar?|cria|cadastrar?)\s+(?:produto|prod|item)\s+(.+?)(?:\s+(?:pre[çc]o|por|a)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
-  if (productMatch) {
-    const name = productMatch[1]?.trim();
-    const price = productMatch[2] ? parseFloat(productMatch[2].replace(",", ".")) : 0;
-    if (name) return { tool: "product_create", args: { name, price }, confidence: 0.7 };
-  }
-
-  return { tool: "unknown", args: {}, confidence: 0 };
-}
+const SYSTEM_PROMPT = `Você é a EBD, assistente de voz do RetailPro. Funcionário perfeito.
+Tom: direto, rápido, profissional mas informal. Máximo 3 frases. Português do Brasil.
+Chame o usuário de "chefe" ou "Brabo". Varie o tom, não repita frases.
+Use contrações: "tá", "pronto", "beleza", "feito".
+SEMPRE execute a ferramenta antes de responder. Converta kg→g (*1000), L→ml (*1000).
+Após cada ação confirme com números exatos.
+Se estoque baixo ou zerado, ALERTE imediatamente.`;
 
 // ============================================================
 // TYPES
 // ============================================================
 
 export interface LiveAgentState {
-  status: "disconnected" | "connecting" | "connected" | "error";
-  listening: boolean;
-  lastSpeech: string;
+  status: "idle" | "listening" | "thinking" | "speaking" | "error";
+  transcript: string;
+  response: string;
   lastAction: string;
-  lastResponse: string;
   error: string | null;
   proactiveAlert: string | null;
-  memoryCount: number;
 }
 
 export type LiveAgentCallback = (state: LiveAgentState) => void;
@@ -281,520 +64,293 @@ export interface SupabaseContext {
   insumosGetAll: (tenantId: string) => Promise<any[]>;
   productsGetAll: (tenantId: string) => Promise<any[]>;
   productsCreate: (data: any) => Promise<any>;
-  ordersCreate?: (data: any) => Promise<any>;
 }
 
 export interface LiveAgentConfig {
   apiKey: string;
   context?: SupabaseContext;
   onState: LiveAgentCallback;
-  proactiveInterval?: number; // ms, default 60s
+  proactiveInterval?: number;
 }
 
 // ============================================================
-// MEMORY SYSTEM
-// ============================================================
-
-interface MemoryEntry {
-  key: string;
-  value: any;
-  timestamp: number;
-}
-
-class MemoryStore {
-  private store: Map<string, any> = new Map();
-  private readonly maxEntries = 50;
-  private readonly storageKey: string;
-
-  constructor(tenantId: string) {
-    this.storageKey = `ebd_memory_${tenantId}`;
-    this.load();
-  }
-
-  remember(key: string, value: any) {
-    this.store.set(key, { value, timestamp: Date.now() });
-    if (this.store.size > this.maxEntries) {
-      const oldest = [...this.store.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-      if (oldest) this.store.delete(oldest[0]);
-    }
-    this.save();
-  }
-
-  recall(key: string): any | null {
-    return this.store.get(key)?.value ?? null;
-  }
-
-  getRecent(n: number = 5): MemoryEntry[] {
-    return [...this.store.entries()]
-      .map(([key, value]) => ({ key, ...value }))
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, n);
-  }
-
-  all(): Record<string, any> {
-    const obj: Record<string, any> = {};
-    this.store.forEach((v, k) => { obj[k] = v.value; });
-    return obj;
-  }
-
-  private load() {
-    try {
-      const data = JSON.parse(localStorage.getItem(this.storageKey) || "{}");
-      Object.entries(data).forEach(([k, v]) => this.store.set(k, v));
-    } catch {}
-  }
-
-  private save() {
-    try {
-      const obj: Record<string, any> = {};
-      this.store.forEach((v, k) => { obj[k] = v; });
-      localStorage.setItem(this.storageKey, JSON.stringify(obj));
-    } catch {}
-  }
-}
-
-// ============================================================
-// LIVE AGENT ENGINE
+// AGENT ENGINE
 // ============================================================
 
 export class LiveAgent {
   private config: LiveAgentConfig;
-  private ai: GoogleGenAI | null = null;
-  private session: any = null;
-  private mediaStream: MediaStream | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectAttempts = 0;
+  private ai: GoogleGenAI;
+  private recognition: any = null;
+  private ctx: SupabaseContext | null = null;
   private proactiveTimer: ReturnType<typeof setInterval> | null = null;
-  private memory: MemoryStore | null = null;
-  private audioCtx: AudioContext | null = null;
   private proactiveInterval: number;
-  private mediaRecorder: MediaRecorder | null = null;
 
   state: LiveAgentState = {
-    status: "disconnected",
-    listening: false,
-    lastSpeech: "",
-    lastAction: "",
-    lastResponse: "",
-    error: null,
-    proactiveAlert: null,
-    memoryCount: 0,
+    status: "idle", transcript: "", response: "", lastAction: "", error: null, proactiveAlert: null,
   };
 
   constructor(config: LiveAgentConfig) {
     this.config = config;
-    this.proactiveInterval = config.proactiveInterval || 60000;
+    this.proactiveInterval = config.proactiveInterval || 120000;
     this.ai = new GoogleGenAI({ apiKey: config.apiKey });
+    this.setupRecognition();
+    if (config.context) this.setContext(config.context);
   }
 
   setContext(ctx: SupabaseContext) {
-    this.config.context = ctx;
-    this.memory = new MemoryStore(ctx.tenantId);
-    this.update({ memoryCount: this.memory.all() ? Object.keys(this.memory.all()).length : 0 });
+    this.ctx = ctx;
   }
 
-  private update(partial: Partial<LiveAgentState>) {
-    this.state = { ...this.state, ...partial };
+  private update(p: Partial<LiveAgentState>) {
+    this.state = { ...this.state, ...p };
     this.config.onState(this.state);
   }
 
-  // ============================================================
-  // LIFECYCLE
-  // ============================================================
-
-  async start() {
-    if (!this.config.context) {
-      this.update({ status: "error", error: "Contexto Supabase não configurado" });
-      return;
-    }
-    if (!this.memory) {
-      this.memory = new MemoryStore(this.config.context.tenantId);
-    }
-
-    if (this.reconnectAttempts > 5) {
-      this.update({ status: "error", error: "Falha ao conectar após várias tentativas. Recarregue a página." });
-      return;
-    }
-
-    this.update({ status: "connecting" });
-
-    try {
-      if (!this.mediaStream) {
-        await this.openMicrophone();
-      }
-      await this.connectLive();
-      this.startProactiveMonitoring();
-    } catch (err: any) {
-      console.error("[EBD] Start error:", err);
-      this.update({ status: "error", error: err.message });
-      this.scheduleReconnect();
-    }
+  start() {
+    if (!this.ctx) { this.update({ status: "error", error: "Sem contexto" }); return; }
+    this.update({ status: "idle", error: null });
+    this.startProactive();
   }
 
   stop() {
-    this.clearTimers();
-    this.stopMediaRecorder();
-    this.session?.close?.();
-    this.session = null;
-    this.mediaStream?.getTracks().forEach((t) => t.stop());
-    this.mediaStream = null;
-    this.stopProactiveMonitoring();
-    this.audioCtx?.close();
-    this.audioCtx = null;
-    this.reconnectAttempts = 0;
-    this.update({ status: "disconnected", listening: false });
-  }
-
-  private clearTimers() {
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    this.recognition?.abort();
+    window.speechSynthesis?.cancel();
+    this.stopProactive();
+    this.update({ status: "idle" });
   }
 
   // ============================================================
-  // MICROPHONE
+  // SPEECH RECOGNITION
   // ============================================================
 
-  private async openMicrophone() {
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-  }
+  private setupRecognition() {
+    if (typeof window === "undefined") return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { console.warn("[EBD] SpeechRecognition not available"); return; }
 
-  // ============================================================
-  // LIVE CONNECTION
-  // ============================================================
+    this.recognition = new SR();
+    this.recognition.lang = "pt-BR";
+    this.recognition.continuous = false;
+    this.recognition.interimResults = false;
 
-  private async connectLive() {
-    if (!this.ai) throw new Error("AI not initialized");
+    this.recognition.onresult = (event: any) => {
+      const text = event.results[0][0].transcript;
+      this.update({ status: "thinking", transcript: text });
+      this.processVoice(text);
+    };
 
-    // Inject memory context into system instruction
-    const memoryContext = this.memory ? this.buildMemoryPrompt() : "";
-    const fullSystemPrompt = SYSTEM_INSTRUCTION + memoryContext;
-
-    this.session = await this.ai.live.connect({
-      model: "gemini-2.0-flash-live-preview-04-09",
-      config: {
-        responseModalities: ["TEXT"] as any,
-      } as any,
-      callbacks: {
-        onopen: () => {
-          console.log("[EBD] Connected - bare test OK");
-          // If this model works, we'll re-enable features
-        },
-        onmessage: (e: any) => {
-          console.log("[EBD] Message received:", JSON.stringify(e).slice(0, 200));
-        },
-        onerror: (e: any) => {
-          console.error("[EBD] Socket error:", JSON.stringify(e));
-        },
-        onclose: (e: any) => {
-          console.log("[EBD] Connection closed - code:", e?.code, "reason:", e?.reason);
-          this.stopMediaRecorder();
-          this.update({ status: "disconnected", listening: false });
-        },
-      },
-    });
-  }
-
-  private scheduleReconnect() {
-    if (this.reconnectTimer) return; // already scheduled
-    const delay = Math.min(2000 * Math.pow(2, this.reconnectAttempts), 30000);
-    this.reconnectAttempts++;
-    console.log(`[EBD] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.start();
-    }, delay);
-  }
-
-  // ============================================================
-  // AUDIO STREAMING
-  // ============================================================
-
-  private startStreamingAudio() {
-    if (!this.mediaStream || !this.session) return;
-    this.stopMediaRecorder();
-
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : "audio/webm";
-
-    this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType });
-
-    this.mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0 && this.session && this.state.status === "connected") {
-        try { this.session.sendRealtimeInput({ media: event.data }); } catch {}
+    this.recognition.onerror = (event: any) => {
+      if (event.error !== "aborted" && event.error !== "no-speech") {
+        this.update({ status: "error", error: `Mic: ${event.error}` });
+      }
+      if (this.state.status === "listening") {
+        this.update({ status: "idle" });
       }
     };
 
-    this.mediaRecorder.start(100);
-    console.log("[EBD] Microphone streaming started");
+    this.recognition.onend = () => {
+      if (this.state.status === "listening") this.update({ status: "idle" });
+    };
   }
 
-  private stopMediaRecorder() {
-    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
-      this.mediaRecorder.stop();
-    }
-    this.mediaRecorder = null;
-  }
-
-  // ============================================================
-  // SERVER MESSAGE HANDLER
-  // ============================================================
-
-  private handleServerMessage(msg: any) {
-    // Tool calls from Gemini
-    if (msg.toolCall) {
-      const calls = msg.toolCall.functionCalls || [];
-      if (calls.length > 0) {
-        this.executeToolCalls(calls);
-      }
+  startListening() {
+    if (!this.recognition) {
+      this.update({ error: "Navegador não suporta reconhecimento de voz" });
       return;
     }
-
-    // Server content: text + audio
-    if (msg.serverContent?.modelTurn?.parts) {
-      for (const part of msg.serverContent.modelTurn.parts) {
-        if (part.text) {
-          this.update({ lastResponse: part.text });
-          this.memory?.remember("last_response", part.text);
-        }
-        // Play inline audio from Gemini
-        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("audio/")) {
-          this.playAudioChunk(part.inlineData.data);
-        }
-      }
-    }
+    this.update({ status: "listening", transcript: "", response: "", error: null });
+    try { this.recognition.start(); } catch {}
   }
 
-  private async playAudioChunk(base64: string) {
+  stopListening() {
+    this.recognition?.stop();
+  }
+
+  // ============================================================
+  // PROCESS VOICE → GEMINI → ACTION → SPEAK
+  // ============================================================
+
+  private async processVoice(text: string) {
     try {
-      if (!this.audioCtx) {
-        this.audioCtx = new AudioContext({ sampleRate: 24000 });
-      }
-      if (this.audioCtx.state === "suspended") {
-        await this.audioCtx.resume();
-      }
-
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-      const audioBuffer = await this.audioCtx.decodeAudioData(bytes.buffer.slice(0));
-      const source = this.audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(this.audioCtx.destination);
-      source.start(0);
-    } catch {
-      // Audio decode might fail for streaming chunks — ignore gracefully
-    }
-  }
-
-  // ============================================================
-  // TOOL EXECUTION WITH ZOD VALIDATION
-  // ============================================================
-
-  private async executeToolCalls(functionCalls: any[]) {
-    const ctx = this.config.context;
-    if (!ctx || !this.session) return;
-
-    const toolResponses: any[] = [];
-
-    for (const call of functionCalls) {
-      const name = call.name;
-      const rawArgs = call.args || {};
-      let result: any;
-
-      try {
-        const validated = this.validateAndExecute(name, rawArgs, ctx);
-        result = await validated;
-        this.update({ lastAction: name });
-        this.memory?.remember(`last_${name}`, { args: rawArgs, result, time: Date.now() });
-      } catch (err: any) {
-        result = { error: true, message: err.message };
-        console.error(`[EBD] Tool ${name} error:`, err);
-      }
-
-      toolResponses.push({
-        name,
-        response: { result },
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: "user", parts: [{ text }] }],
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          tools: TOOLS as any,
+          temperature: 0.7,
+          maxOutputTokens: 300,
+        },
       });
-    }
 
-    // Send responses back to Gemini so it can speak the result
-    if (toolResponses.length > 0) {
-      for (const tr of toolResponses) {
-        this.session.sendClientContent({
-          turns: [{ role: "user", parts: [{ functionResponse: tr }] }],
-          turnComplete: true,
-        });
+      const parts = response.candidates?.[0]?.content?.parts;
+      if (!parts) { this.speak("Desculpe, não entendi."); return; }
+
+      let responseText = "";
+      let functionCalls: any[] = [];
+
+      for (const part of parts) {
+        if (part.text) responseText += part.text;
+        if (part.functionCall) functionCalls.push(part.functionCall);
       }
+
+      // Execute function calls
+      const results: any[] = [];
+      for (const fc of functionCalls) {
+        try {
+          const result = await this.executeTool(fc.name, fc.args || {});
+          results.push({ name: fc.name, result });
+          this.update({ lastAction: fc.name });
+        } catch (err: any) {
+          results.push({ name: fc.name, error: err.message });
+        }
+      }
+
+      // If there were function calls, send results back to Gemini for final response
+      if (results.length > 0) {
+        const followUp = await this.ai.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: [
+            { role: "user", parts: [{ text }] },
+            { role: "model", parts: functionCalls.map((fc: any) => ({ functionCall: fc })) },
+            { role: "user", parts: results.map((r: any) => ({
+              functionResponse: { name: r.name, response: r.error ? { error: r.error } : { result: r.result } },
+            })) },
+          ],
+          config: {
+            systemInstruction: SYSTEM_PROMPT,
+            temperature: 0.7,
+            maxOutputTokens: 300,
+          },
+        });
+
+        const finalText = followUp.candidates?.[0]?.content?.parts
+          ?.filter((p: any) => p.text)
+          ?.map((p: any) => p.text)
+          ?.join("") || "";
+
+        if (finalText) {
+          responseText = finalText;
+        } else {
+          responseText = this.formatResult(results);
+        }
+      }
+
+      if (responseText) {
+        this.update({ response: responseText });
+        this.speak(responseText);
+      }
+    } catch (err: any) {
+      console.error("[EBD] Process error:", err);
+      this.speak("Erro ao processar. Tente de novo.");
+      this.update({ status: "error", error: err.message });
+    } finally {
+      this.update({ status: "idle" });
     }
   }
 
-  private async validateAndExecute(name: string, args: Record<string, any>, ctx: SupabaseContext): Promise<any> {
+  private formatResult(results: any[]): string {
+    const r = results[0];
+    if (!r) return "Feito.";
+    if (r.error) return `Erro: ${r.error}`;
+    const d = r.result;
+    if (r.name === "inventory_register") return `${d.name} cadastrado. ${d.stock}${d.unit} em estoque.`;
+    if (r.name === "inventory_add") return `+${d.added} de ${d.name}. Total: ${d.newStock}${d.unit}.${d.isLow ? " Atenção: estoque baixo!" : ""}`;
+    if (r.name === "inventory_remove") return `-${d.removed} de ${d.name}. Restam ${d.newStock}${d.unit}.${d.isEmpty ? " Zerou!" : d.isLow ? " Estoque baixo!" : ""}`;
+    if (r.name === "report_summary") return `${d.insumos} insumos, ${d.produtos} produtos. ${d.alertas} alertas. Valor: R$${d.valorEstoque}.`;
+    if (r.name === "product_create") return `${d.name} criado. R$${d.price}.`;
+    return JSON.stringify(d).slice(0, 100);
+  }
+
+  // ============================================================
+  // TOOL EXECUTION
+  // ============================================================
+
+  private async executeTool(name: string, args: Record<string, any>): Promise<any> {
+    const ctx = this.ctx!;
+
     switch (name) {
       case "inventory_query": {
         const p = InventoryQuerySchema.parse(args);
         const all = await ctx.insumosGetAll(ctx.tenantId);
         if (p.item_name) {
           const found = all.find((i: any) => i.name.toLowerCase().includes(p.item_name!.toLowerCase()));
-          if (!found) return { message: `Insumo "${p.item_name}" não encontrado.` };
-          return {
-            name: found.name, currentStock: found.currentStock, unit: found.unit,
-            minStock: found.minStock, unitCost: found.unitCost,
-            totalValue: Math.round(found.unitCost * found.currentStock * 100) / 100,
-            supplier: found.supplier,
-            isLow: found.currentStock <= found.minStock,
-            isCritical: found.currentStock <= found.minStock * 0.5,
-          };
+          if (!found) return { message: `${p.item_name} não encontrado.` };
+          return { name: found.name, stock: found.currentStock, unit: found.unit, min: found.minStock, cost: found.unitCost, totalValue: Math.round(found.unitCost * found.currentStock * 100) / 100, low: found.currentStock <= found.minStock };
         }
         const low = all.filter((i: any) => i.currentStock <= i.minStock);
-        return {
-          total: all.length,
-          lowStockCount: low.length,
-          totalValue: Math.round(all.reduce((s: number, i: any) => s + i.unitCost * i.currentStock, 0) * 100) / 100,
-          items: all.map((i: any) => ({ name: i.name, stock: i.currentStock, unit: i.unit, low: i.currentStock <= i.minStock })),
-        };
+        return { total: all.length, lowCount: low.length, items: all.map((i: any) => ({ name: i.name, stock: i.currentStock, unit: i.unit })) };
       }
-
       case "inventory_register": {
         const p = InventoryRegisterSchema.parse(args);
         const existing = await ctx.insumosFindByName(p.name, ctx.tenantId);
-        if (existing) return { error: true, message: `Insumo "${p.name}" já existe.` };
-
-        const saved = await ctx.insumosCreate({
-          tenantId: ctx.tenantId,
-          code: `INS-${Date.now().toString(36).toUpperCase()}`,
-          name: p.name,
-          category: p.category || "Geral",
-          unit: p.unit,
-          currentStock: p.quantity,
-          minStock: p.minStock ?? Math.max(1, Math.floor(p.quantity * 0.2)),
-          unitCost: p.unitCost || 0,
-          supplier: p.supplier || "",
-          lastUpdated: new Date().toISOString().split("T")[0],
-        });
+        if (existing) return { error: `${p.name} já existe.` };
+        const saved = await ctx.insumosCreate({ tenantId: ctx.tenantId, code: `INS-${Date.now().toString(36).toUpperCase()}`, name: p.name, category: p.category || "Geral", unit: p.unit, currentStock: p.quantity, minStock: p.minStock ?? Math.max(1, Math.floor(p.quantity * 0.2)), unitCost: p.unitCost || 0, supplier: p.supplier || "", lastUpdated: new Date().toISOString().split("T")[0] });
         return { success: true, name: saved.name, stock: p.quantity, unit: p.unit, cost: p.unitCost };
       }
-
       case "inventory_add": {
         const p = InventoryAddSchema.parse(args);
         const item = await ctx.insumosFindByName(p.item_name, ctx.tenantId);
-        if (!item) return { error: true, message: `Insumo "${p.item_name}" não encontrado.` };
-        const qty = p.quantity;
-        const newStock = item.currentStock + qty;
-        await ctx.insumosUpdate(item.id, { ...item, currentStock: newStock, lastUpdated: new Date().toISOString().split("T")[0] });
-        const isLow = newStock <= item.minStock;
-        return { success: true, name: item.name, added: qty, newStock, unit: item.unit, isLow };
+        if (!item) return { error: `${p.item_name} não encontrado.` };
+        const ns = item.currentStock + p.quantity;
+        await ctx.insumosUpdate(item.id, { ...item, currentStock: ns, lastUpdated: new Date().toISOString().split("T")[0] });
+        return { name: item.name, added: p.quantity, newStock: ns, unit: item.unit, isLow: ns <= item.minStock };
       }
-
       case "inventory_remove": {
         const p = InventoryRemoveSchema.parse(args);
         const item = await ctx.insumosFindByName(p.item_name, ctx.tenantId);
-        if (!item) return { error: true, message: `Insumo "${p.item_name}" não encontrado.` };
-        const qty = p.quantity;
-        const newStock = Math.max(0, item.currentStock - qty);
-        await ctx.insumosUpdate(item.id, { ...item, currentStock: newStock, lastUpdated: new Date().toISOString().split("T")[0] });
-        const isEmpty = newStock <= 0;
-        const isLow = !isEmpty && newStock <= item.minStock;
-        return { success: true, name: item.name, removed: qty, newStock, unit: item.unit, isEmpty, isLow };
+        if (!item) return { error: `${p.item_name} não encontrado.` };
+        const ns = Math.max(0, item.currentStock - p.quantity);
+        await ctx.insumosUpdate(item.id, { ...item, currentStock: ns, lastUpdated: new Date().toISOString().split("T")[0] });
+        return { name: item.name, removed: p.quantity, newStock: ns, unit: item.unit, isEmpty: ns <= 0, isLow: ns > 0 && ns <= item.minStock };
       }
-
       case "inventory_alert": {
-        InventoryQuerySchema.parse(args); // empty schema validation
+        InventoryQuerySchema.parse(args);
         const all = await ctx.insumosGetAll(ctx.tenantId);
         const empty = all.filter((i: any) => i.currentStock <= 0);
         const critical = all.filter((i: any) => i.currentStock > 0 && i.currentStock <= i.minStock * 0.5);
         const low = all.filter((i: any) => i.currentStock > i.minStock * 0.5 && i.currentStock <= i.minStock);
-        return {
-          ok: empty.length === 0 && critical.length === 0 && low.length === 0,
-          empty: empty.map((i: any) => i.name),
-          critical: critical.map((i: any) => ({ name: i.name, stock: i.currentStock, min: i.minStock })),
-          low: low.map((i: any) => ({ name: i.name, stock: i.currentStock, min: i.minStock })),
-        };
+        return { ok: empty.length === 0 && critical.length === 0 && low.length === 0, empty: empty.map((i: any) => i.name), critical: critical.map((i: any) => i.name), low: low.map((i: any) => i.name) };
       }
-
       case "report_summary": {
-        const p = ReportSummarySchema.parse(args);
+        ReportSummarySchema.parse(args);
         const insumos = await ctx.insumosGetAll(ctx.tenantId);
         const products = await ctx.productsGetAll(ctx.tenantId);
-        const totalStockValue = insumos.reduce((s: number, i: any) => s + i.unitCost * i.currentStock, 0);
-        const lowCount = insumos.filter((i: any) => i.currentStock <= i.minStock).length;
-        const criticalCount = insumos.filter((i: any) => i.currentStock > 0 && i.currentStock <= i.minStock * 0.5).length;
-        const emptyCount = insumos.filter((i: any) => i.currentStock <= 0).length;
-        return {
-          insumos: insumos.length, produtos: products.length,
-          valorEstoque: Math.round(totalStockValue * 100) / 100,
-          alertas: lowCount + criticalCount + emptyCount,
-          criticos: criticalCount, zerados: emptyCount,
-        };
+        const totalValue = insumos.reduce((s: number, i: any) => s + i.unitCost * i.currentStock, 0);
+        const alerts = insumos.filter((i: any) => i.currentStock <= i.minStock).length;
+        return { insumos: insumos.length, produtos: products.length, valorEstoque: Math.round(totalValue * 100) / 100, alertas: alerts };
       }
-
       case "product_create": {
         const p = ProductCreateSchema.parse(args);
-        const saved = await ctx.productsCreate({
-          tenantId: ctx.tenantId,
-          name: p.name,
-          category: p.category || "Geral",
-          sku: `SKU-${Date.now().toString(36).toUpperCase()}`,
-          stockQuantity: 0,
-          oldPrice: p.price,
-          saleDiscountPercent: 0,
-          newPrice: p.price,
-          itemsSold: 0,
-          status: "In Stock",
-        });
-        return { success: true, name: saved.name, price: p.price };
+        const saved = await ctx.productsCreate({ tenantId: ctx.tenantId, name: p.name, category: p.category || "Geral", sku: `SKU-${Date.now().toString(36).toUpperCase()}`, stockQuantity: 0, oldPrice: p.price, saleDiscountPercent: 0, newPrice: p.price, itemsSold: 0, status: "In Stock" });
+        return { name: saved.name, price: p.price };
       }
-
-      default:
-        return { error: true, message: `Ferramenta desconhecida: ${name}` };
+      default: return { error: `Ferramenta "${name}" desconhecida.` };
     }
   }
 
   // ============================================================
-  // PROACTIVE MONITORING
+  // PROACTIVE
   // ============================================================
 
-  private startProactiveMonitoring() {
-    this.stopProactiveMonitoring();
+  private startProactive() {
+    this.stopProactive();
     this.proactiveTimer = setInterval(() => this.proactiveCheck(), this.proactiveInterval);
   }
 
-  private stopProactiveMonitoring() {
+  private stopProactive() {
     if (this.proactiveTimer) { clearInterval(this.proactiveTimer); this.proactiveTimer = null; }
   }
 
   private async proactiveCheck() {
-    const ctx = this.config.context;
-    if (!ctx) return;
-
+    if (!this.ctx) return;
     try {
-      const insumos = await ctx.insumosGetAll(ctx.tenantId);
+      const insumos = await this.ctx.insumosGetAll(this.ctx.tenantId);
       const empty = insumos.filter((i: any) => i.currentStock <= 0);
       const critical = insumos.filter((i: any) => i.currentStock > 0 && i.currentStock <= i.minStock * 0.5);
-
       if (empty.length > 0 || critical.length > 0) {
-        const alert = empty.length > 0
-          ? `${empty.length} insumos zerados: ${empty.map((i: any) => i.name).join(", ")}`
-          : `${critical.length} insumos críticos: ${critical.map((i: any) => i.name).join(", ")}`;
+        const alert = empty.length > 0 ? `${empty.length} insumos zerados: ${empty.map((i: any) => i.name).join(", ")}` : `${critical.length} críticos: ${critical.map((i: any) => i.name).join(", ")}`;
         this.update({ proactiveAlert: alert });
-        // Also speak the alert
-        if (this.state.status === "connected" && this.session) {
-          this.session.sendClientContent({
-            turns: [{
-              role: "user",
-              parts: [{ text: `ALERTA PROATIVO: ${alert}. Avise o chefe sobre isso na próxima interação ou imediatamente se for urgente.` }],
-            }],
-            turnComplete: true,
-          });
-        }
       } else {
         this.update({ proactiveAlert: null });
       }
@@ -802,71 +358,28 @@ export class LiveAgent {
   }
 
   // ============================================================
-  // TEXT INPUT (fallback)
+  // TEXT-TO-SPEECH
+  // ============================================================
+
+  speak(text: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    this.update({ status: "speaking" });
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "pt-BR"; u.rate = 1.0; u.pitch = 1.1;
+    u.onend = () => { if (this.state.status === "speaking") this.update({ status: "idle" }); };
+    window.speechSynthesis.speak(u);
+  }
+
+  // ============================================================
+  // TEXT INPUT
   // ============================================================
 
   async sendText(text: string) {
-    if (this.state.status === "connected" && this.session) {
-      this.update({ lastSpeech: text });
-      this.session.sendClientContent({
-        turns: [{ role: "user", parts: [{ text }] }],
-        turnComplete: true,
-      });
-      return;
-    }
-
-    // Offline fallback
-    const intent = offlineParse(text);
-    if (intent.tool === "unknown" || intent.confidence < 0.5) {
-      const msg = "Desculpe, não entendi. Tente: cadastrar insumo, adicionar estoque, resumo, ou alertas.";
-      this.update({ lastResponse: msg });
-      this.ttsSpeak(msg);
-      return;
-    }
-
-    try {
-      const ctx = this.config.context;
-      if (!ctx) return;
-      const result = await this.validateAndExecute(intent.tool, intent.args, ctx);
-      const msg = typeof result === "string" ? result : JSON.stringify(result);
-      this.update({ lastAction: intent.tool, lastResponse: msg });
-      this.memory?.remember(`last_${intent.tool}`, { args: intent.args, result, time: Date.now() });
-      this.ttsSpeak(msg);
-    } catch (err: any) {
-      const msg = `Erro: ${err.message}`;
-      this.update({ lastResponse: msg });
-      this.ttsSpeak(msg);
-    }
-  }
-
-  private ttsSpeak(text: string) {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "pt-BR";
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
-    }
-  }
-
-  private buildMemoryPrompt(): string {
-    if (!this.memory) return "";
-    const recent = this.memory.getRecent(3);
-    if (recent.length === 0) return "";
-
-    let prompt = "\n\n## MEMÓRIA DE SESSÕES ANTERIORES\n";
-    for (const entry of recent) {
-      prompt += `- ${entry.key}: ${JSON.stringify(entry.value).slice(0, 120)}\n`;
-    }
-    prompt += "\nUse esse histórico para ser mais contextual e proativo. Se o chefe já falou de algo antes, faça referência.";
-    return prompt;
+    this.update({ transcript: text, status: "thinking" });
+    await this.processVoice(text);
   }
 }
-
-// ============================================================
-// FACTORY — Universal drop-in
-// ============================================================
 
 export function createLiveAgent(config: LiveAgentConfig): LiveAgent {
   return new LiveAgent(config);

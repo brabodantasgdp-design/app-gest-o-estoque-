@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { createLiveAgent, type LiveAgent, type LiveAgentState, type SupabaseContext } from "../services/liveAgent";
 import { insumosService, productsService } from "../lib/database";
+import { Mic, MicOff, Loader2, Volume2 } from "lucide-react";
 
 interface Props {
   tenantId: string | null;
@@ -9,31 +10,16 @@ interface Props {
 
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
-const STATUS_LABELS: Record<string, string> = {
-  disconnected: "off",
-  connecting: "conectando...",
-  connected: "EBD",
-  error: "erro",
-};
-
-const STATUS_COLORS: Record<string, { dot: string; bg: string; border: string }> = {
-  disconnected: { dot: "bg-zinc-500", bg: "bg-zinc-900/80", border: "border-zinc-800/50" },
-  connecting: { dot: "bg-amber-500 animate-pulse", bg: "bg-amber-950/80", border: "border-amber-800/40" },
-  connected: { dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]", bg: "bg-zinc-900/80", border: "border-zinc-800/30" },
-  error: { dot: "bg-red-500 animate-pulse", bg: "bg-red-950/80", border: "border-red-800/40" },
-};
-
 export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => {
   const agentRef = useRef<LiveAgent | null>(null);
   const startedRef = useRef(false);
   const [state, setState] = React.useState<LiveAgentState>({
-    status: "disconnected", listening: false, lastSpeech: "", lastAction: "",
-    lastResponse: "", error: null, proactiveAlert: null, memoryCount: 0,
+    status: "idle", transcript: "", response: "", lastAction: "", error: null, proactiveAlert: null,
   });
+  const [showResponse, setShowResponse] = React.useState(false);
   const [showAlert, setShowAlert] = React.useState(false);
-  const [showSpeech, setShowSpeech] = React.useState(false);
+  const responseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const alertTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const speechTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const buildContext = useCallback((): SupabaseContext | null => {
     if (!tenantId) return null;
@@ -51,114 +37,123 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
     };
   }, [tenantId]);
 
-  // Initialize agent once
+  // Init once
   useEffect(() => {
-    if (startedRef.current) return;
-    if (!tenantId || !GEMINI_KEY) return;
-
+    if (startedRef.current || !tenantId || !GEMINI_KEY) return;
     startedRef.current = true;
     const ctx = buildContext();
     if (!ctx) return;
-
     const agent = createLiveAgent({ apiKey: GEMINI_KEY, context: ctx, onState: setState });
     agentRef.current = agent;
     agent.start();
-
-    return () => {
-      agent.stop();
-      startedRef.current = false;
-    };
+    return () => { agent.stop(); startedRef.current = false; };
   }, [tenantId, GEMINI_KEY]);
 
-  // Update context when tenant changes
   useEffect(() => {
     if (!startedRef.current) return;
     const ctx = buildContext();
-    if (ctx && agentRef.current) {
-      agentRef.current.setContext(ctx);
-    }
+    if (ctx && agentRef.current) agentRef.current.setContext(ctx);
   }, [tenantId]);
 
-  // Show proactive alert with auto-dismiss
+  // Show response toast
+  useEffect(() => {
+    if (state.response) {
+      setShowResponse(true);
+      if (responseTimer.current) clearTimeout(responseTimer.current);
+      responseTimer.current = setTimeout(() => setShowResponse(false), 8000);
+    }
+    if (state.lastAction) {
+      const t = setTimeout(onRefresh, 600);
+      return () => clearTimeout(t);
+    }
+  }, [state.response, state.lastAction]);
+
+  // Show alert toast
   useEffect(() => {
     if (state.proactiveAlert) {
       setShowAlert(true);
       if (alertTimer.current) clearTimeout(alertTimer.current);
-      alertTimer.current = setTimeout(() => setShowAlert(false), 8000);
-    } else {
-      setShowAlert(false);
+      alertTimer.current = setTimeout(() => setShowAlert(false), 10000);
     }
   }, [state.proactiveAlert]);
 
-  // Show last speech/results briefly
-  useEffect(() => {
-    if (state.lastResponse) {
-      setShowSpeech(true);
-      if (speechTimer.current) clearTimeout(speechTimer.current);
-      speechTimer.current = setTimeout(() => setShowSpeech(false), 5000);
+  const toggleMic = () => {
+    const agent = agentRef.current;
+    if (!agent) return;
+    if (state.status === "listening") {
+      agent.stopListening();
+    } else if (state.status === "idle" || state.status === "speaking") {
+      agent.startListening();
     }
-    if (state.lastAction) {
-      // Refresh data after action
-      const t = setTimeout(onRefresh, 800);
-      return () => clearTimeout(t);
-    }
-  }, [state.lastResponse, state.lastAction]);
+  };
 
-  const colors = STATUS_COLORS[state.status] || STATUS_COLORS.disconnected;
+  const isActive = state.status === "listening" || state.status === "thinking";
+  const isSpeaking = state.status === "speaking";
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-1.5 pointer-events-none select-none">
-      {/* Proactive alert toast */}
+    <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-1.5">
+      {/* Proactive alert */}
       {showAlert && state.proactiveAlert && (
-        <div className="pointer-events-auto bg-red-950/95 backdrop-blur-md border border-red-700/50 rounded-xl px-3 py-2 max-w-[280px] text-[11px] text-red-300 shadow-2xl shadow-red-900/30 animate-in slide-in-from-bottom-2 duration-300">
-          <span className="font-extrabold text-red-400 text-[10px] uppercase tracking-wider">Alerta Proativo</span>
+        <div className="bg-red-950/95 backdrop-blur-md border border-red-700/50 rounded-xl px-3 py-2 max-w-[280px] text-[11px] text-red-300 shadow-2xl animate-in slide-in-from-bottom-2">
+          <span className="font-extrabold text-red-400 text-[10px] uppercase tracking-wider">Alerta</span>
           <p className="mt-0.5 leading-tight">{state.proactiveAlert}</p>
         </div>
       )}
 
-      {/* Last response toast */}
-      {showSpeech && state.lastResponse && (
-        <div className="pointer-events-auto bg-zinc-900/95 backdrop-blur-md border border-emerald-800/30 rounded-xl px-3 py-2 max-w-[280px] text-[11px] text-zinc-300 shadow-2xl animate-in slide-in-from-bottom-2 duration-300">
+      {/* Response toast */}
+      {showResponse && state.response && (
+        <div className="bg-zinc-900/95 backdrop-blur-md border border-emerald-800/30 rounded-xl px-3 py-2 max-w-[280px] text-[11px] text-zinc-300 shadow-2xl animate-in slide-in-from-bottom-2">
           <span className="font-extrabold text-emerald-400 text-[10px] uppercase tracking-wider">EBD</span>
-          <p className="mt-0.5 leading-tight">{state.lastResponse}</p>
+          <p className="mt-0.5 leading-tight">{state.response}</p>
         </div>
       )}
 
-      {/* Status pill */}
-      <div className={`flex items-center gap-2 ${colors.bg} backdrop-blur-md border ${colors.border} rounded-full px-3 py-1.5 shadow-xl transition-colors duration-500`}>
-        {/* Dot with glow */}
-        <div className="relative">
-          <div className={`w-2 h-2 rounded-full ${colors.dot} transition-all duration-300`} />
-          {state.status === "connected" && (
-            <div className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping opacity-30" />
-          )}
+      {/* Transcript when listening */}
+      {state.status === "listening" && state.transcript && (
+        <div className="bg-amber-950/80 backdrop-blur-md border border-amber-800/40 rounded-xl px-3 py-1.5 text-[11px] text-amber-200 shadow-xl max-w-[200px] truncate">
+          {state.transcript}
         </div>
+      )}
 
-        {/* Label */}
-        <span className={`text-[10px] font-bold font-mono uppercase tracking-[0.15em] transition-colors duration-300 ${
-          state.status === "connected" ? "text-emerald-400" :
-          state.status === "error" ? "text-red-400" :
-          "text-zinc-500"
-        }`}>
-          {STATUS_LABELS[state.status]}
-        </span>
+      {/* Main mic button */}
+      <button
+        onClick={toggleMic}
+        className={`
+          relative w-12 h-12 rounded-full flex items-center justify-center
+          transition-all duration-300 cursor-pointer shadow-xl border
+          ${isActive
+            ? "bg-amber-500/20 border-amber-500/40 scale-110"
+            : isSpeaking
+              ? "bg-emerald-500/20 border-emerald-500/40"
+              : state.status === "error"
+                ? "bg-red-500/20 border-red-500/40"
+                : "bg-zinc-900/80 border-zinc-700/40 hover:border-amber-500/30"
+          }
+        `}
+        title={state.status === "listening" ? "Ouvindo... clique para parar" : "Clique e fale"}
+      >
+        {isActive && <span className="absolute inset-0 rounded-full animate-ping bg-amber-500/20" />}
+        {isActive && <span className="absolute inset-0 rounded-full animate-pulse bg-amber-500/10" />}
 
-        {/* Waveform when listening */}
-        {state.listening && (
-          <div className="flex items-end gap-px h-2.5 ml-0.5">
-            {[0.6, 1, 0.4, 0.8, 0.5].map((h, i) => (
-              <div
-                key={i}
-                className="w-0.5 bg-emerald-400/60 rounded-full"
-                style={{
-                  height: `${h * 100}%`,
-                  animation: `waveform 0.8s ease-in-out ${i * 0.12}s infinite`,
-                }}
-              />
-            ))}
-          </div>
+        {state.status === "thinking" ? (
+          <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+        ) : state.status === "listening" ? (
+          <Mic className="w-5 h-5 text-amber-400" />
+        ) : isSpeaking ? (
+          <Volume2 className="w-5 h-5 text-emerald-400" />
+        ) : (
+          <Mic className="w-5 h-5 text-zinc-400" />
         )}
-      </div>
+      </button>
+
+      {/* Label */}
+      <span className="text-[10px] text-zinc-600 font-mono pr-1 select-none">
+        {state.status === "listening" ? "ouvindo..." :
+         state.status === "thinking" ? "pensando..." :
+         state.status === "speaking" ? "falando..." :
+         state.status === "error" ? "erro" :
+         "EBD"}
+      </span>
     </div>
   );
 };
