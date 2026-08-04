@@ -212,8 +212,8 @@ CREATE POLICY "Allow all" ON "InvoiceItem" FOR ALL USING (true) WITH CHECK (true
 CREATE POLICY "Allow all" ON "User" FOR ALL USING (true) WITH CHECK (true);
 
 -- STEP 6: INSERT SUPER ADMIN USER
-INSERT INTO "User" (id, name, email, role) VALUES
-  ('usr-superadmin', 'Brabo Dantas', 'brabo.dantas.gdp@gmail.com', 'super_admin')
+INSERT INTO "User" (name, email, role) VALUES
+  ('Brabo Dantas', 'brabo.dantas.gdp@gmail.com', 'super_admin')
 ON CONFLICT (email) DO NOTHING;
 
 -- STEP 7: VERIFY
