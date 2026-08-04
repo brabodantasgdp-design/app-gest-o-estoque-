@@ -75,7 +75,8 @@ export interface LiveAgentConfig {
   context?: SupabaseContext;
   onState: LiveAgentCallback;
   proactiveInterval?: number;
-  useAI?: boolean; // false = local regex + TTS, zero API cost
+  useAI?: boolean;
+  onNavigate?: (target: string) => void; // "insumos" | "produtos" | "pedidos" | "dashboard" | "fichas" | "notas" | "add-insumo" | "add-produto"
 }
 
 // ============================================================
@@ -386,6 +387,29 @@ export class LiveAgent {
       const parsed = this.localParse(text);
       tool = parsed.tool;
       args = parsed.args;
+    }
+
+    // Navigation intents - controlam a UI
+    if (tool === "navigate" || tool === "open_add_form") {
+      const lower = text.toLowerCase();
+      let target = "";
+      if (lower.includes("insumo") || lower.includes("estoque") || lower.includes("ingrediente")) target = "insumos";
+      else if (lower.includes("produto") || lower.includes("cardapio") || lower.includes("catalogo")) target = "produtos";
+      else if (lower.includes("pedido") || lower.includes("venda") || lower.includes("comanda")) target = "pedidos";
+      else if (lower.includes("dashboard") || lower.includes("inicio") || lower.includes("home") || lower.includes("painel")) target = "dashboard";
+      else if (lower.includes("ficha") || lower.includes("receita") || lower.includes("producao")) target = "fichas";
+      else if (lower.includes("nota") || lower.includes("nf") || lower.includes("ocr") || lower.includes("fiscal")) target = "notas";
+
+      if (tool === "open_add_form") {
+        target = lower.includes("produto") ? "add-produto" : "add-insumo";
+      }
+
+      const config = this.config as any;
+      if (config.onNavigate && target) {
+        config.onNavigate(target);
+        this.update({ response: "Abrindo " + target.replace("-", " ") + "..." }); this.speak("Abrindo.");
+        return;
+      }
     }
 
     if (tool === "unknown") {

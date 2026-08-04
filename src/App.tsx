@@ -244,6 +244,12 @@ export default function App() {
     setActiveTab(module as TabType);
   }, []);
 
+  const handleAgentNavigate = useCallback((target: string) => {
+    if (target === "add-insumo") { setActiveTab("insumos"); return; }
+    if (target === "add-produto") { setActiveTab("products"); return; }
+    setActiveTab(target as TabType);
+  }, []);
+
   const handleVoiceAddStock = useCallback(async (product: string, quantity: number, unit: string) => {
     const insumo = allInsumos.find(i => i.name.toLowerCase().includes(product.toLowerCase()));
     if (!insumo) throw new Error(`Insumo "${product}" não encontrado`);
@@ -590,7 +596,7 @@ export default function App() {
       )}
 
       {currentUser && activeTenantId && (
-        <LiveAgentIndicator tenantId={activeTenantId} onRefresh={handleRefreshData} />
+        <LiveAgentIndicator tenantId={activeTenantId} onRefresh={handleRefreshData} onNavigate={handleAgentNavigate} />
       )}
 
     </div>

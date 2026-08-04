@@ -6,6 +6,7 @@ import { Loader2, Send, X, Sparkles, Zap, Bot, AlertTriangle } from "lucide-reac
 interface Props {
   tenantId: string | null;
   onRefresh: () => void;
+  onNavigate?: (target: string) => void;
 }
 
 interface ChatMsg {
@@ -14,7 +15,7 @@ interface ChatMsg {
   time: number;
 }
 
-export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => {
+export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh, onNavigate }) => {
   const agentRef = useRef<LiveAgent | null>(null);
   const startedRef = useRef(false);
   const [state, setState] = React.useState<LiveAgentState>({
@@ -48,7 +49,7 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
     startedRef.current = true;
     const ctx = buildContext();
     if (!ctx) return;
-    const agent = createLiveAgent({ context: ctx, onState: setState, useAI: false });
+    const agent = createLiveAgent({ context: ctx, onState: setState, useAI: false, onNavigate });
     agentRef.current = agent;
     agent.start();
     return () => { agent.stop(); startedRef.current = false; };
