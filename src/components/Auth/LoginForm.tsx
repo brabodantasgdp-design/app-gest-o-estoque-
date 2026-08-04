@@ -25,7 +25,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
       if (result.success && result.user) {
         onLoginSuccess(result.user);
       } else {
-        setError(result.message || 'Falha na autenticação. Verifique suas credenciais.');
+        setError(result.message || 'Falha na autenticacao. Verifique suas credenciais.');
       }
     } catch (err) {
       setError('Erro ao conectar com o servidor. Tente novamente.');

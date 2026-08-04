@@ -24,34 +24,7 @@ export const authService = {
     });
 
     if (authError) {
-      // Se não existe no Supabase Auth, criar conta
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name: user.name,
-            role: user.role,
-            tenant_id: user.tenant_id,
-          }
-        }
-      });
-
-      if (signUpError) {
-        return { success: false, message: 'Erro ao autenticar' };
-      }
-
-      return {
-        success: true,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          tenantId: user.tenant_id,
-          tenantName: user.tenants?.name || '',
-        }
-      };
+      return { success: false, message: 'Credenciais inválidas. Verifique email e senha.' };
     }
 
     return {

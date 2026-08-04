@@ -9,6 +9,8 @@ import { InvoiceOCRModule } from './components/InvoiceOCRModule';
 import { ProductsModule } from './components/ProductsModule';
 import { OrdersModule } from './components/OrdersModule';
 import { SuperAdminModule } from './components/SuperAdminModule';
+import { ReportsView } from './components/ReportsView';
+import { SettingsView } from './components/SettingsView';
 import { LoginForm } from './components/Auth/LoginForm';
 import {
   CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
@@ -146,7 +148,7 @@ export default function App() {
     );
   }
 
-  // Handlers for CRUD operations
+  // Handlers for CRUD operations with Supabase persistence
   const handleSetInsumos = useCallback((action: React.SetStateAction<Insumo[]>) => {
     setAllInsumos(action);
   }, []);
@@ -167,8 +169,35 @@ export default function App() {
     setAllInvoices(action);
   }, []);
 
-  const handleSaveToProducts = useCallback((newProduct: Product) => {
-    setAllProducts(prev => [{ ...newProduct, tenantId: activeTenantId }, ...prev]);
+  const handleSaveToProducts = useCallback(async (newProduct: Product) => {
+    const productWithTenant = { ...newProduct, tenantId: activeTenantId };
+    try {
+      const saved = await productsService.create(productWithTenant);
+      setAllProducts(prev => [saved, ...prev]);
+    } catch (err) {
+      console.error('Error saving product:', err);
+      setAllProducts(prev => [productWithTenant, ...prev]);
+    }
+  }, [activeTenantId]);
+
+  const handleRefreshData = useCallback(async () => {
+    if (!activeTenantId) return;
+    try {
+      const [insumos, fichas, products, orders, invoices] = await Promise.all([
+        insumosService.getByTenant(activeTenantId),
+        fichasService.getByTenant(activeTenantId),
+        productsService.getByTenant(activeTenantId),
+        ordersService.getByTenant(activeTenantId),
+        invoicesService.getByTenant(activeTenantId),
+      ]);
+      setAllInsumos(insumos);
+      setAllFichas(fichas);
+      setAllProducts(products);
+      setAllOrders(orders);
+      setAllInvoices(invoices);
+    } catch (err) {
+      console.error('Error refreshing data:', err);
+    }
   }, [activeTenantId]);
 
   const handleSelectTenantContext = useCallback((tenantId: string) => {
@@ -281,6 +310,8 @@ export default function App() {
               insumos={tenantInsumos}
               setInsumos={handleSetInsumos}
               currency={currency}
+              activeTenantId={activeTenantId}
+              onRefresh={handleRefreshData}
             />
           )}
 
@@ -291,6 +322,8 @@ export default function App() {
               insumos={tenantInsumos}
               currency={currency}
               onSaveToProducts={handleSaveToProducts}
+              activeTenantId={activeTenantId}
+              onRefresh={handleRefreshData}
             />
           )}
 
@@ -299,6 +332,7 @@ export default function App() {
               insumos={tenantInsumos}
               setInsumos={handleSetInsumos}
               currency={currency}
+              activeTenantId={activeTenantId}
             />
           )}
 
@@ -307,6 +341,8 @@ export default function App() {
               products={tenantProducts}
               setProducts={handleSetProducts}
               currency={currency}
+              activeTenantId={activeTenantId}
+              onRefresh={handleRefreshData}
             />
           )}
 
@@ -315,6 +351,8 @@ export default function App() {
               orders={tenantOrders}
               setOrders={handleSetOrders}
               currency={currency}
+              activeTenantId={activeTenantId}
+              onRefresh={handleRefreshData}
             />
           )}
 
@@ -329,61 +367,21 @@ export default function App() {
           )}
 
           {activeTab === 'reports' && (
-            <div className="space-y-6 pb-12 animate-in fade-in duration-300">
-              <div className="pb-2 border-b border-zinc-800/50">
-                <h1 className="text-xl font-extrabold text-white">Relatórios Financeiros & Lucratividade</h1>
-                <p className="text-xs text-zinc-400 mt-1">
-                  Análise de margem por ficha técnica e CMV da loja: <strong className="text-amber-400">{currentTenant?.name}</strong>
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2">
-                  <div className="text-xs text-zinc-400">Margem Média de Lucro</div>
-                  <div className="text-3xl font-black text-amber-400">63.6%</div>
-                  <div className="text-[10px] text-emerald-400 font-bold">+4.2% em relação ao trimestre anterior</div>
-                </div>
-
-                <div className="p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2">
-                  <div className="text-xs text-zinc-400">CMV Médio (Custo de Insumos)</div>
-                  <div className="text-3xl font-black text-white">28.4%</div>
-                  <div className="text-[10px] text-zinc-500">Alinhado com a meta do setor de varejo</div>
-                </div>
-
-                <div className="p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2">
-                  <div className="text-xs text-zinc-400">Economia via Reajuste OCR IA</div>
-                  <div className="text-3xl font-black text-emerald-400">R$ 3.420</div>
-                  <div className="text-[10px] text-zinc-500">Recuperados por prevenção de sobrepreço</div>
-                </div>
-              </div>
-            </div>
+            <ReportsView
+              fichas={tenantFichas}
+              insumos={tenantInsumos}
+              products={tenantProducts}
+              invoices={tenantInvoices}
+              currency={currency}
+              currentTenant={currentTenant}
+            />
           )}
 
           {activeTab === 'settings' && (
-            <div className="space-y-6 pb-12 animate-in fade-in duration-300">
-              <div className="pb-2 border-b border-zinc-800/50">
-                <h1 className="text-xl font-extrabold text-white">Configurações do EBD ElBravoDantas</h1>
-                <p className="text-xs text-zinc-400 mt-1">Integração de banco Supabase + Prisma, chaves de API e parâmetros do sistema.</p>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-4 max-w-2xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 text-amber-500">⚡</div>
-                  <div>
-                    <h3 className="text-sm font-extrabold text-white">Modelo Gemini OCR Ativo</h3>
-                    <p className="text-xs text-zinc-400">gemini-3.6-flash em modo server-side seguro com visual schema OCR</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 pt-4 border-t border-zinc-800">
-                  <div className="w-5 h-5 text-amber-500">🗄️</div>
-                  <div>
-                    <h3 className="text-sm font-extrabold text-white">Banco de Dados PostgreSQL (Supabase)</h3>
-                    <p className="text-xs text-zinc-400">Conectado e sincronizado com RLS multi-tenant ativo</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SettingsView
+              currentTenant={currentTenant}
+              currentUser={currentUser}
+            />
           )}
         </main>
       </div>

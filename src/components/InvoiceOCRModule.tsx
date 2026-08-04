@@ -23,12 +23,14 @@ interface InvoiceOCRModuleProps {
   insumos: Insumo[];
   setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>>;
   currency: CurrencyType;
+  activeTenantId: string;
 }
 
 export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
   insumos,
   setInsumos,
   currency,
+  activeTenantId,
 }) => {
   const [loading, setLoading] = useState(false);
   const [activeScan, setActiveScan] = useState<InvoiceScan | null>(SAMPLE_INVOICES[0]);
@@ -124,7 +126,7 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
         const inv = data.invoiceData;
         const newScan: InvoiceScan = {
           id: `inv-${Date.now()}`,
-          tenantId: 'tenant-1',
+          tenantId: activeTenantId,
           supplierName: inv.supplierName || 'Fornecedor Identificado',
           cnpj: inv.cnpj || '00.000.000/0001-00',
           invoiceNumber: inv.invoiceNumber || `NF-${Math.floor(10000 + Math.random() * 90000)}`,

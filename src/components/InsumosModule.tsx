@@ -12,14 +12,17 @@ import {
   ArrowUpDown
 } from 'lucide-react';
 import { Insumo, CurrencyType } from '../types';
+import { insumosService } from '../lib/database';
 
 interface InsumosModuleProps {
   insumos: Insumo[];
   setInsumos: React.Dispatch<React.SetStateAction<Insumo[]>>;
   currency: CurrencyType;
+  activeTenantId: string;
+  onRefresh: () => Promise<void>;
 }
 
-export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumos, currency }) => {
+export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumos, currency, activeTenantId, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
@@ -54,13 +57,13 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
     return matchesSearch && matchesCategory && matchesLowStock;
   });
 
-  const handleCreateInsumo = (e: React.FormEvent) => {
+  const handleCreateInsumo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
 
     const newInsumo: Insumo = {
       id: `ins-${Date.now()}`,
-      tenantId: 'tenant-1',
+      tenantId: activeTenantId,
       code: `INS-${Math.floor(100 + Math.random() * 900)}`,
       name,
       category,
@@ -72,7 +75,14 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
       lastUpdated: new Date().toISOString().split('T')[0],
     };
 
-    setInsumos([newInsumo, ...insumos]);
+    try {
+      await insumosService.create(newInsumo);
+      await onRefresh();
+    } catch (err) {
+      console.error('Error creating insumo:', err);
+      setInsumos([newInsumo, ...insumos]);
+    }
+
     setIsModalOpen(false);
     resetForm();
   };
@@ -87,25 +97,36 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
     setSupplier('');
   };
 
-  const handleStockAdjustment = (delta: number) => {
+  const handleStockAdjustment = async (delta: number) => {
     if (!stockAdjustModal) return;
-    setInsumos(
-      insumos.map((item) =>
-        item.id === stockAdjustModal.id
-          ? {
-              ...item,
-              currentStock: Math.max(0, item.currentStock + delta),
-              lastUpdated: new Date().toISOString().split('T')[0],
-            }
-          : item
-      )
-    );
+    const updated = {
+      ...stockAdjustModal,
+      currentStock: Math.max(0, stockAdjustModal.currentStock + delta),
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    try {
+      await insumosService.update(stockAdjustModal.id, updated);
+      await onRefresh();
+    } catch (err) {
+      console.error('Error adjusting stock:', err);
+      setInsumos(
+        insumos.map((item) =>
+          item.id === stockAdjustModal.id ? updated : item
+        )
+      );
+    }
     setStockAdjustModal(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Tem certeza que deseja remover este insumo?')) {
-      setInsumos(insumos.filter((i) => i.id !== id));
+      try {
+        await insumosService.delete(id);
+        await onRefresh();
+      } catch (err) {
+        console.error('Error deleting insumo:', err);
+        setInsumos(insumos.filter((i) => i.id !== id));
+      }
     }
   };
 

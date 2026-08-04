@@ -11,13 +11,16 @@ import {
   PackageCheck
 } from 'lucide-react';
 import { FichaTecnica, Insumo, RecipeItem, CurrencyType, Product } from '../types';
+import { fichasService, productsService } from '../lib/database';
 
 interface FichaTecnicaModuleProps {
   fichas: FichaTecnica[];
   setFichas: React.Dispatch<React.SetStateAction<FichaTecnica[]>>;
   insumos: Insumo[];
   currency: CurrencyType;
-  onSaveToProducts: (newProduct: Product) => void;
+  onSaveToProducts: (newProduct: Product) => Promise<void>;
+  activeTenantId: string;
+  onRefresh: () => Promise<void>;
 }
 
 export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
@@ -26,6 +29,8 @@ export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
   insumos,
   currency,
   onSaveToProducts,
+  activeTenantId,
+  onRefresh,
 }) => {
   const [selectedFicha, setSelectedFicha] = useState<FichaTecnica | null>(fichas[0] || null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -85,7 +90,7 @@ export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
   const netProfitPerUnit = finalPrice - effectiveBatchCost;
   const profitMarginRate = finalPrice > 0 ? (netProfitPerUnit / finalPrice) * 100 : 0;
 
-  const handleSaveFicha = (e: React.FormEvent) => {
+  const handleSaveFicha = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productName || recipeItems.length === 0) {
       alert('Por favor informe o nome do produto e adicione pelo menos 1 insumo à ficha técnica.');
@@ -94,7 +99,7 @@ export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
 
     const newFicha: FichaTecnica = {
       id: `ft-${Date.now()}`,
-      tenantId: 'tenant-1',
+      tenantId: activeTenantId,
       code: `FT-${Math.floor(200 + Math.random() * 800)}`,
       productName,
       category,
@@ -113,12 +118,32 @@ export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
       profitMarginRate,
     };
 
-    setFichas([newFicha, ...fichas]);
+    try {
+      await fichasService.create(newFicha, recipeItems);
+      await onRefresh();
+    } catch (err) {
+      console.error('Error saving ficha:', err);
+      setFichas([newFicha, ...fichas]);
+    }
+
     setSelectedFicha(newFicha);
     setIsCreatingNew(false);
   };
 
-  const handleExportProduct = (ficha: FichaTecnica) => {
+  const handleDeleteFicha = async (id: string) => {
+    if (confirm('Tem certeza que deseja excluir esta ficha técnica?')) {
+      try {
+        await fichasService.delete(id);
+        await onRefresh();
+        if (selectedFicha?.id === id) setSelectedFicha(null);
+      } catch (err) {
+        console.error('Error deleting ficha:', err);
+        setFichas(fichas.filter((f) => f.id !== id));
+      }
+    }
+  };
+
+  const handleExportProduct = async (ficha: FichaTecnica) => {
     const newProd: Product = {
       id: `p-${Date.now()}`,
       tenantId: ficha.tenantId || 'tenant-1',
@@ -194,9 +219,20 @@ export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] font-mono font-bold text-amber-500">{f.code}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300">
-                      {f.category}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300">
+                        {f.category}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteFicha(f.id);
+                        }}
+                        className="p-1 rounded-lg bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
 
                   <h3 className="text-sm font-extrabold text-white mb-2">{f.productName}</h3>
