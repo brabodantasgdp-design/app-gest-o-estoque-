@@ -127,21 +127,33 @@ export class LiveAgent {
   private setupRecognition() {
     if (typeof window === "undefined") return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) { console.warn("[EBD] SpeechRecognition not available"); return; }
+    if (!SR) {
+      console.warn("[EBD] SpeechRecognition not available in this browser");
+      return;
+    }
 
+    console.log("[EBD] SpeechRecognition supported, setting up...");
     this.recognition = new SR();
     this.recognition.lang = "pt-BR";
     this.recognition.continuous = false;
     this.recognition.interimResults = false;
 
+    this.recognition.onstart = () => {
+      console.log("[EBD] Recognition started");
+    };
+
     this.recognition.onresult = (event: any) => {
       const text = event.results[0][0].transcript;
+      console.log("[EBD] Heard:", text);
       this.update({ status: "thinking", transcript: text });
       this.processVoice(text);
     };
 
     this.recognition.onerror = (event: any) => {
-      if (event.error !== "aborted" && event.error !== "no-speech") {
+      console.error("[EBD] Recognition error:", event.error, event.message);
+      if (event.error === "not-allowed") {
+        this.update({ status: "error", error: "Microfone bloqueado. Permita no navegador." });
+      } else if (event.error !== "aborted" && event.error !== "no-speech") {
         this.update({ status: "error", error: `Mic: ${event.error}` });
       }
       if (this.state.status === "listening") {
@@ -150,17 +162,26 @@ export class LiveAgent {
     };
 
     this.recognition.onend = () => {
+      console.log("[EBD] Recognition ended");
       if (this.state.status === "listening") this.update({ status: "idle" });
     };
   }
 
   startListening() {
     if (!this.recognition) {
-      this.update({ error: "Navegador não suporta reconhecimento de voz" });
+      const isChrome = !!(window as any).chrome;
+      const msg = isChrome
+        ? "Microfone não disponível. Verifique as permissões do site."
+        : "Seu navegador não suporta voz. Use o Chrome.";
+      this.update({ status: "error", error: msg });
+      console.error("[EBD]", msg);
       return;
     }
     this.update({ status: "listening", transcript: "", response: "", error: null });
-    try { this.recognition.start(); } catch {}
+    try { this.recognition.start(); } catch (e: any) {
+      console.error("[EBD] start() failed:", e);
+      this.update({ status: "error", error: "Erro ao iniciar microfone." });
+    }
   }
 
   stopListening() {
