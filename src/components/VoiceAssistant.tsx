@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, Check, AlertCircle, Volume2, VolumeX, Zap, MessageCircle, Minimize2, Maximize2 } from 'lucide-react';
-import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
-import { processVoiceCommand, CommandResult } from '../services/voiceService';
 import { 
-  ConversationState, 
-  startConversation, 
-  processConversationStep, 
-  detectIntent 
-} from '../services/conversationEngine';
+  Mic, MicOff, X, Check, AlertCircle, Volume2, VolumeX, 
+  Zap, Minimize2, Maximize2, Brain, History, Settings,
+  MessageCircle, Command, Trash2, ChevronDown, ChevronUp
+} from 'lucide-react';
+import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
+import { jarvis, SystemState } from '../services/jarvisCore';
+import { jarvisVoice, VoiceConfig } from '../services/jarvisVoice';
+import { jarvisTools, ToolCall } from '../services/jarvisTools';
 import { Insumo, Product, Order, FichaTecnica, InvoiceScan, Tenant } from '../types';
-import { insumosService, productsService, ordersService } from '../lib/database';
 
 interface VoiceAssistantProps {
   isOpen: boolean;
@@ -24,6 +23,8 @@ interface VoiceAssistantProps {
   onNavigate: (module: string) => void;
   onRefresh: () => Promise<void>;
 }
+
+type ViewMode = 'main' | 'history' | 'settings' | 'tools';
 
 export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   isOpen,
@@ -52,283 +53,201 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   } = useVoiceRecognition();
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<CommandResult | null>(null);
-  const [history, setHistory] = useState<Array<{ time: Date; input: string; response: string }>>([]);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [conversationMode, setConversationMode] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [history, setHistory] = useState<Array<{ time: Date; input: string; response: string; success: boolean }>>([]);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('main');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [jarvisThinking, setJarvisThinking] = useState(false);
+  const [toolHistory, setToolHistory] = useState<ToolCall[]>([]);
+  const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>({
+    rate: 1.1,
+    pitch: 0.9,
+    volume: 1,
+    voice: null,
+    enabled: true,
+  });
+  const [showQuickActions, setShowQuickActions] = useState(true);
   
-  // Conversation state
-  const [conversation, setConversation] = useState<ConversationState | null>(null);
-  const [conversationHistory, setConversationHistory] = useState<string[]>([]);
-  
-  // Auto-scroll
   const historyRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // Update JARVIS state when data changes
+  useEffect(() => {
+    jarvis.updateState({ insumos, products, orders, fichas, invoices, tenant });
+  }, [insumos, products, orders, fichas, invoices, tenant]);
+
+  // Load tool history
+  useEffect(() => {
+    setToolHistory(jarvisTools.getCallHistory(20));
+  }, [isProcessing]);
+
+  // Auto-scroll
   useEffect(() => {
     if (historyRef.current) {
       historyRef.current.scrollTop = historyRef.current.scrollHeight;
     }
-  }, [history, conversationHistory]);
+  }, [history, result]);
 
+  // Process voice transcript
   useEffect(() => {
     if (transcript && !isListening && !isProcessing) {
       handleProcessCommand(transcript);
     }
   }, [transcript, isListening]);
 
+  // Auto-start listening when minimized
   useEffect(() => {
-    if (isOpen && conversationMode && !isListening) {
-      setTimeout(() => startListening(), 100);
+    if (isMinimized && isSupported && !isListening && !isProcessing) {
+      // Auto-listen in minimized mode
     }
-  }, [isOpen, conversationMode]);
+  }, [isMinimized, isSupported]);
 
   const handleProcessCommand = async (text: string) => {
     if (!text.trim()) return;
     
     setIsProcessing(true);
+    setJarvisThinking(true);
     setResult(null);
 
     try {
-      // If we're in a conversation, continue it
-      if (conversation) {
-        const response = processConversationStep(conversation, text);
-        
-        setConversationHistory(prev => [...prev, `Você: ${text}`, `AI: ${response.message}`]);
-        
-        if (response.state === null) {
-          // Conversation finished - execute the action
-          const data = conversation.data;
-          setConversation(null);
-          
-          try {
-            if (data.name && data.quantity !== undefined && !data.customer) {
-              // Create insumo
-              await insumosService.create({
-                tenantId: activeTenantId,
-                code: `INS-${Math.floor(100 + Math.random() * 900)}`,
-                name: data.name,
-                category: 'Via Voz',
-                unit: data.unit || 'g',
-                currentStock: data.quantity,
-                minStock: Math.floor(data.quantity * 0.2),
-                unitCost: data.cost ? data.cost / data.quantity : 0,
-                supplier: 'Via assistente de voz',
-                lastUpdated: new Date().toISOString().split('T')[0],
-              });
-              await onRefresh();
-            } else if (data.name && data.price !== undefined) {
-              // Create product
-              await productsService.create({
-                tenantId: activeTenantId,
-                name: data.name,
-                price: data.price,
-                cost: 0,
-                margin: 0,
-                category: 'Via Voz',
-                description: 'Criado via assistente de voz',
-                active: true,
-                createdAt: new Date().toISOString(),
-              } as any);
-              await onRefresh();
-            } else if (data.customer && data.product) {
-              // Create order
-              const prod = products.find(p => p.name.toLowerCase().includes(data.product.toLowerCase()));
-              if (prod) {
-                await ordersService.create({
-                  tenantId: activeTenantId,
-                  customerName: data.customer,
-                  items: [{ productName: prod.name, quantity: data.quantity || 1, unitPrice: prod.price, subtotal: prod.price * (data.quantity || 1) }],
-                  totalAmount: prod.price * (data.quantity || 1),
-                  status: 'Pendente',
-                  createdAt: new Date().toISOString(),
-                } as any);
-                await onRefresh();
-              }
-            }
-          } catch (err) {
-            console.error('Error executing:', err);
-          }
-          
-          setResult({ action: 'success', response: response.message, success: true });
-          if (soundEnabled) speak(response.message.replace('✓ ', ''));
-          
-          setConversationHistory([]);
-        } else {
-          // Continue conversation
-          setConversation(response.state);
-          setResult({ action: 'conversation', response: response.message, success: true });
-          if (soundEnabled) speak(response.message);
-        }
-        
-        setHistory(prev => [{ time: new Date(), input: text, response: response.message }, ...prev].slice(0, 10));
-        setIsProcessing(false);
-        resetTranscript();
-        
-        if (conversationMode) {
-          setTimeout(() => { if (!isListening) startListening(); }, 300);
-        }
-        return;
+      // Add user turn to context
+      jarvis.addTurn('user', text);
+      
+      // Process with JARVIS tools
+      const response = await jarvisTools.processNaturalLanguage(text, activeTenantId);
+      
+      // Add JARVIS turn to context
+      jarvis.addTurn('jarvis', response.message);
+      
+      // Save to history
+      setHistory(prev => [
+        { time: new Date(), input: text, response: response.message, success: response.success },
+        ...prev
+      ].slice(0, 20));
+
+      setResult({ success: response.success, message: response.message });
+
+      // Handle navigation if needed
+      if (response.data?.navigate) {
+        onNavigate(response.data.navigate);
       }
 
-      // Check if user wants to start a conversation
-      const intent = detectIntent(text);
-      if (intent) {
-        const response = startConversation(intent);
-        setConversation(response.state);
-        setResult({ action: 'conversation', response: response.message, success: true });
-        if (soundEnabled) speak(response.message);
-        
-        setConversationHistory([`AI: ${response.message}`]);
-        setHistory(prev => [{ time: new Date(), input: text, response: response.message }, ...prev].slice(0, 10));
-        setIsProcessing(false);
-        resetTranscript();
-        
-        if (conversationMode) {
-          setTimeout(() => { if (!isListening) startListening(); }, 300);
-        }
-        return;
+      // Speak response
+      if (soundEnabled) {
+        await jarvisVoice.speak(response.message);
       }
 
-      // Direct command
-      const context = { insumos, products, orders, fichas, invoices, tenant };
-      const commandResult = await processVoiceCommand(text, context, {
-        navigate: onNavigate,
-        addStock: async (product, qty, unit) => {
-          const insumo = insumos.find(i => i.name.toLowerCase().includes(product.toLowerCase()));
-          if (insumo) {
-            await insumosService.update(insumo.id, {
-              ...insumo,
-              currentStock: insumo.currentStock + qty,
-              lastUpdated: new Date().toISOString().split('T')[0],
-            });
-            await onRefresh();
-          }
-        },
-        removeStock: async (product, qty, unit) => {
-          const insumo = insumos.find(i => i.name.toLowerCase().includes(product.toLowerCase()));
-          if (insumo) {
-            await insumosService.update(insumo.id, {
-              ...insumo,
-              currentStock: Math.max(0, insumo.currentStock - qty),
-              lastUpdated: new Date().toISOString().split('T')[0],
-            });
-            await onRefresh();
-          }
-        },
-        createProduct: async (name, price) => {
-          await productsService.create({
-            tenantId: activeTenantId,
-            name,
-            price,
-            cost: 0,
-            margin: 0,
-            category: 'Via Voz',
-            description: 'Criado via assistente de voz',
-            active: true,
-            createdAt: new Date().toISOString(),
-          } as any);
-          await onRefresh();
-        },
-        createOrder: async (customer, product, qty) => {
-          const prod = products.find(p => p.name.toLowerCase().includes(product.toLowerCase()));
-          if (prod) {
-            await ordersService.create({
-              tenantId: activeTenantId,
-              customerName: customer,
-              items: [{ productName: prod.name, quantity: qty, unitPrice: prod.price, subtotal: prod.price * qty }],
-              totalAmount: prod.price * qty,
-              status: 'Pendente',
-              createdAt: new Date().toISOString(),
-            } as any);
-            await onRefresh();
-          }
-        },
-        queryStock: (name) => {
-          const insumo = insumos.find(i => i.name.toLowerCase().includes(name.toLowerCase()));
-          if (!insumo) return null;
-          return { currentStock: insumo.currentStock, unit: insumo.unit };
-        },
-        close: onClose,
-      });
-
-      setResult(commandResult);
-      setHistory(prev => [{ time: new Date(), input: text, response: commandResult.response }, ...prev].slice(0, 10));
-
-      if (soundEnabled && commandResult.response) {
-        speak(commandResult.response.replace('✓ ', ''));
+      // Refresh data if stock was modified
+      if (response.success && ['add_stock', 'remove_stock', 'create_product', 'create_order'].some(t => response.message.includes(t))) {
+        await onRefresh();
       }
 
     } catch (err) {
-      console.error('Error:', err);
-      const errorResult: CommandResult = { action: 'error', response: 'Erro ao processar.', success: false };
-      setResult(errorResult);
-      if (soundEnabled) speak('Erro ao processar');
+      console.error('JARVIS Error:', err);
+      setResult({ success: false, message: 'Erro ao processar comando.' });
+      if (soundEnabled) {
+        await jarvisVoice.speakError('Erro ao processar');
+      }
     } finally {
       setIsProcessing(false);
+      setJarvisThinking(false);
       resetTranscript();
-      
-      if (conversationMode) {
-        setTimeout(() => { if (!isListening) startListening(); }, 300);
-      }
     }
   };
 
   const handleMicPress = () => {
-    if (conversationMode) {
-      setConversationMode(false);
-      setConversation(null);
-      setConversationHistory([]);
+    if (isListening) {
       stopListening();
     } else {
       resetTranscript();
       setResult(null);
-      setConversationMode(true);
       startListening();
+    }
+  };
+
+  const handleTextSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const input = inputRef.current;
+    if (input && input.value.trim()) {
+      handleProcessCommand(input.value.trim());
+      input.value = '';
+    }
+  };
+
+  const clearMemory = () => {
+    jarvis.resetContext();
+    setHistory([]);
+    setResult(null);
+  };
+
+  const toggleSound = async () => {
+    const newState = !soundEnabled;
+    setSoundEnabled(newState);
+    jarvisVoice.setEnabled(newState);
+    
+    if (newState) {
+      await jarvisVoice.speak('Áudio ativado');
     }
   };
 
   if (!isOpen) return null;
 
-  // MINIMIZED VIEW - Floating widget
+  // ============================================================
+  // MINIMIZED VIEW - Floating orb
+  // ============================================================
   if (isMinimized) {
     return (
-      <div className="fixed bottom-20 lg:bottom-6 right-4 z-50 flex flex-col items-end gap-2">
+      <div className="fixed bottom-24 lg:bottom-8 right-4 z-50 flex flex-col items-end gap-3">
         {/* Result toast */}
         {result && (
-          <div className={`max-w-xs p-2 rounded-lg text-[10px] shadow-lg animate-in slide-in-from-right ${
+          <div className={`max-w-xs p-3 rounded-xl shadow-2xl animate-slide-in text-xs ${
             result.success 
-              ? 'bg-emerald-500/90 text-white' 
-              : 'bg-red-500/90 text-white'
+              ? 'bg-gradient-to-r from-emerald-500/90 to-emerald-600/90 text-white' 
+              : 'bg-gradient-to-r from-red-500/90 to-red-600/90 text-white'
           }`}>
-            {result.response}
+            {result.message}
           </div>
         )}
         
-        {/* Conversation indicator */}
-        {conversation && (
-          <div className="max-w-xs p-2 rounded-lg bg-amber-500/90 text-black text-[10px] shadow-lg">
-            💭 {conversationHistory[conversationHistory.length - 1]?.replace('AI: ', '') || 'Aguardando...'}
+        {/* Context hint */}
+        {jarvis.getTopic() && (
+          <div className="max-w-xs p-2 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs shadow-lg">
+            💭 {jarvis.getTopic()}
           </div>
         )}
         
-        {/* Main floating button */}
-        <div className="flex items-center gap-2">
+        {/* Main floating orb */}
+        <div className="flex items-center gap-3">
           {isListening && (
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+            <div className="flex gap-1">
+              {[...Array(3)].map((_, i) => (
+                <div 
+                  key={i}
+                  className="w-1 bg-amber-500 rounded-full animate-pulse"
+                  style={{ 
+                    height: `${12 + Math.random() * 20}px`,
+                    animationDelay: `${i * 0.1}s` 
+                  }} 
+                />
+              ))}
+            </div>
           )}
+          
           <button
             onClick={() => setIsMinimized(false)}
-            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${
-              conversationMode 
-                ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/30' 
-                : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-orange-500/30'
+            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 ${
+              isListening 
+                ? 'bg-gradient-to-br from-red-500 via-red-600 to-red-700 shadow-red-500/40 animate-pulse' 
+                : jarvisThinking
+                ? 'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 shadow-blue-500/40'
+                : 'bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 shadow-orange-500/30 hover:scale-110'
             }`}
           >
-            {conversationMode ? (
-              <MicOff className="w-6 h-6 text-white" />
+            {jarvisThinking ? (
+              <Brain className="w-7 h-7 text-white animate-spin" />
             ) : (
-              <Mic className="w-6 h-6 text-white" />
+              <Zap className="w-7 h-7 text-white" />
             )}
           </button>
         </div>
@@ -336,148 +255,402 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     );
   }
 
+  // ============================================================
   // FULL VIEW - Side panel
+  // ============================================================
   return (
-    <div className="fixed right-0 top-0 bottom-0 w-full sm:w-96 z-50 flex">
+    <div className="fixed right-0 top-0 bottom-0 w-full sm:w-[420px] z-50 flex">
       {/* Backdrop */}
-      <div className="flex-1 bg-black/50 backdrop-blur-sm lg:hidden" onClick={onClose} />
+      <div 
+        className="flex-1 bg-black/60 backdrop-blur-sm lg:hidden" 
+        onClick={onClose} 
+      />
       
       {/* Panel */}
-      <div className="w-full sm:w-96 bg-[#121214] border-l border-zinc-800 flex flex-col shadow-2xl">
+      <div className="w-full sm:w-[420px] bg-[#0A0A0C] border-l border-zinc-800/50 flex flex-col shadow-2xl">
         
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between bg-[#18181b] flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500">
-              <Zap className="w-3.5 h-3.5 text-black" />
+        {/* ============================================================ */}
+        {/* HEADER */}
+        {/* ============================================================ */}
+        <div className="px-5 py-4 border-b border-zinc-800/50 bg-gradient-to-r from-[#121214] to-[#1A1A1E] flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${
+                isListening 
+                  ? 'bg-gradient-to-br from-red-500 to-red-600 animate-pulse' 
+                  : 'bg-gradient-to-br from-amber-500 to-orange-500'
+              }`}>
+                <Zap className="w-5 h-5 text-black" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white tracking-wider">J.A.R.V.I.S</h3>
+                <p className="text-[10px] text-zinc-500">
+                  {jarvisThinking ? '🧠 Processando...' : 
+                   isListening ? '🔴 Ouvindo...' : 
+                   isSpeaking ? '🔊 Falando...' : '⚡ Pronto'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xs font-extrabold text-white">EBD AI</h3>
-              <p className="text-[9px] text-zinc-500">
-                {conversation ? '💭 Conversando...' : isListening ? '🔴 Ouvindo...' : 'Pronto'}
-              </p>
+            
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={toggleSound} 
+                className={`p-2 rounded-lg transition-colors ${
+                  soundEnabled ? 'text-amber-500 hover:bg-amber-500/10' : 'text-zinc-500 hover:bg-zinc-800'
+                }`}
+              >
+                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+              <button 
+                onClick={() => setIsMinimized(true)} 
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={onClose} 
+                className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 text-zinc-400 hover:text-white rounded">
-              {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-            <button onClick={() => setIsMinimized(true)} className="p-1.5 text-zinc-400 hover:text-white rounded">
-              <Minimize2 className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => { setConversationMode(false); setConversation(null); stopListening(); onClose(); }} className="p-1.5 text-zinc-400 hover:text-white rounded">
-              <X className="w-3.5 h-3.5" />
-            </button>
+
+          {/* View tabs */}
+          <div className="flex gap-1 mt-3">
+            {[
+              { id: 'main', icon: Zap, label: 'Chat' },
+              { id: 'history', icon: History, label: 'Histórico' },
+              { id: 'tools', icon: Command, label: 'Tools' },
+              { id: 'settings', icon: Settings, label: 'Config' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setViewMode(tab.id as ViewMode)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium transition-all ${
+                  viewMode === tab.id 
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                }`}
+              >
+                <tab.icon className="w-3 h-3" />
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Conversation Area */}
-        {conversation && (
-          <div className="px-4 py-2 border-b border-zinc-800 bg-amber-500/5">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[9px] font-bold text-amber-400">MODO CONVERSA</span>
-              <button onClick={() => { setConversation(null); setConversationHistory([]); }} className="text-[9px] text-zinc-400 hover:text-red-400">
-                Cancelar
-              </button>
-            </div>
-            <div className="space-y-0.5 max-h-20 overflow-y-auto" ref={historyRef}>
-              {conversationHistory.map((msg, i) => (
-                <p key={i} className={`text-[10px] ${msg.startsWith('AI:') ? 'text-amber-300' : 'text-zinc-400'}`}>
-                  {msg}
-                </p>
+        {/* ============================================================ */}
+        {/* MAIN VIEW */}
+        {/* ============================================================ */}
+        {viewMode === 'main' && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            
+            {/* Messages area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3" ref={historyRef}>
+              
+              {/* Welcome message */}
+              {history.length === 0 && !result && (
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+                    <Brain className="w-10 h-10 text-amber-500" />
+                  </div>
+                  <p className="text-zinc-400 text-sm mb-2">Olá! Sou o J.A.R.V.I.S</p>
+                  <p className="text-zinc-600 text-xs">Diga um comando ou clique no microfone</p>
+                  
+                  {/* Quick suggestions */}
+                  <div className="mt-6 space-y-2 px-4">
+                    {[
+                      'Quanto tenho de estoque?',
+                      'Relatório de vendas',
+                      'Criar produto novo',
+                      'Estoque baixo',
+                    ].map((suggestion, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleProcessCommand(suggestion)}
+                        className="w-full p-2 rounded-lg bg-zinc-900/50 border border-zinc-800 text-xs text-zinc-400 hover:text-white hover:border-zinc-700 transition-all text-left"
+                      >
+                        💡 {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* History messages */}
+              {history.map((item, index) => (
+                <div key={index} className="space-y-2">
+                  {/* User message */}
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] p-3 rounded-2xl rounded-br-sm bg-amber-500/10 border border-amber-500/20">
+                      <p className="text-xs text-amber-300">{item.input}</p>
+                    </div>
+                  </div>
+                  
+                  {/* JARVIS response */}
+                  <div className="flex justify-start">
+                    <div className={`max-w-[85%] p-3 rounded-2xl rounded-bl-sm ${
+                      item.success 
+                        ? 'bg-zinc-800/50 border border-zinc-700/50' 
+                        : 'bg-red-500/10 border border-red-500/20'
+                    }`}>
+                      <p className={`text-xs whitespace-pre-line ${item.success ? 'text-zinc-300' : 'text-red-300'}`}>
+                        {item.response}
+                      </p>
+                      <p className="text-[9px] text-zinc-600 mt-1">
+                        {item.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               ))}
+
+              {/* Thinking indicator */}
+              {jarvisThinking && (
+                <div className="flex justify-start">
+                  <div className="p-3 rounded-2xl rounded-bl-sm bg-zinc-800/50 border border-zinc-700/50">
+                    <div className="flex items-center gap-2">
+                      <Brain className="w-4 h-4 text-amber-500 animate-spin" />
+                      <span className="text-xs text-zinc-400">Processando...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ============================================================ */}
+            {/* INPUT AREA */}
+            {/* ============================================================ */}
+            <div className="p-4 border-t border-zinc-800/50 bg-[#121214]">
+              {/* Interim transcript */}
+              {isListening && interimTranscript && (
+                <div className="mb-2 p-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                  <p className="text-[10px] text-amber-400 italic">"{interimTranscript}"</p>
+                </div>
+              )}
+
+              {/* Text input */}
+              <form onSubmit={handleTextSubmit} className="flex gap-2 mb-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Digite um comando..."
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500/50 transition-colors"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-500 hover:bg-amber-500/30 transition-colors"
+                >
+                  <Command className="w-4 h-4" />
+                </button>
+              </form>
+
+              {/* Mic button */}
+              <div className="flex justify-center">
+                <button
+                  onClick={handleMicPress}
+                  disabled={!isSupported}
+                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${
+                    isListening 
+                      ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-lg shadow-red-500/30 scale-110' 
+                      : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-lg shadow-orange-500/20 hover:scale-105'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {isListening ? (
+                    <MicOff className="w-7 h-7 text-white" />
+                  ) : (
+                    <Mic className="w-7 h-7 text-white" />
+                  )}
+                </button>
+              </div>
+              
+              {!isSupported && (
+                <p className="text-center text-[10px] text-red-400 mt-2">
+                  Reconhecimento de voz não suportado neste navegador
+                </p>
+              )}
             </div>
           </div>
         )}
 
-        {/* Main Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          
-          {/* Mic Button */}
-          <div className="flex justify-center">
-            <button
-              onClick={handleMicPress}
-              className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
-                conversationMode 
-                  ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-lg shadow-red-500/30 animate-pulse' 
-                  : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-lg shadow-orange-500/20 hover:scale-105'
-              }`}
-            >
-              {conversationMode ? (
-                <MicOff className="w-8 h-8 text-white" />
-              ) : (
-                <Mic className="w-8 h-8 text-white" />
-              )}
-            </button>
-          </div>
-
-          {/* Status */}
-          <div className="text-center">
-            {isListening && !isProcessing && (
-              <div>
-                <p className="text-xs font-bold text-amber-400 animate-pulse">Ouvindo...</p>
-                {interimTranscript && (
-                  <p className="text-[10px] text-zinc-400 mt-1 italic truncate">"{interimTranscript}"</p>
-                )}
-              </div>
-            )}
-            {isProcessing && <p className="text-xs font-bold text-blue-400">Processando...</p>}
-            {isSpeaking && <p className="text-xs font-bold text-emerald-400">Falando...</p>}
-            {!isListening && !isProcessing && !isSpeaking && !result && !conversation && (
-              <p className="text-[10px] text-zinc-500">Toque e fale um comando</p>
-            )}
-          </div>
-
-          {/* Result */}
-          {result && !conversation && (
-            <div className={`p-2.5 rounded-lg flex items-start gap-2 text-xs ${
-              result.success 
-                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' 
-                : 'bg-red-500/10 border border-red-500/20 text-red-300'
-            }`}>
-              {result.success ? <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />}
-              <span>{result.response}</span>
+        {/* ============================================================ */}
+        {/* HISTORY VIEW */}
+        {/* ============================================================ */}
+        {viewMode === 'history' && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white">Memória do JARVIS</h3>
+              <button 
+                onClick={clearMemory}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs hover:bg-red-500/20"
+              >
+                <Trash2 className="w-3 h-3" />
+                Limpar
+              </button>
             </div>
-          )}
-
-          {/* Quick Actions */}
-          {!conversation && (
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                { label: 'Criar insumo', cmd: 'Criar insumo', icon: '📦' },
-                { label: 'Criar produto', cmd: 'Criar produto', icon: '🏷️' },
-                { label: 'Criar pedido', cmd: 'Criar pedido', icon: '🛒' },
-                { label: 'Dashboard', cmd: 'Abrir dashboard', icon: '📊' },
-                { label: 'Insumos', cmd: 'Abrir insumos', icon: '📦' },
-                { label: 'Produtos', cmd: 'Abrir produtos', icon: '🏷️' },
-              ].map((item) => (
-                <button 
-                  key={item.cmd}
-                  onClick={() => handleProcessCommand(item.cmd)} 
-                  className="p-2 rounded-lg bg-[#1A1A1E] border border-zinc-800 text-[10px] text-zinc-400 hover:text-white hover:border-zinc-700 text-left flex items-center gap-1.5"
+            
+            <div className="space-y-2">
+              {jarvis.getRecentMemory(30).map((entry) => (
+                <div 
+                  key={entry.id} 
+                  className={`p-3 rounded-lg border ${
+                    entry.type === 'success' ? 'bg-emerald-500/5 border-emerald-500/20' :
+                    entry.type === 'error' ? 'bg-red-500/5 border-red-500/20' :
+                    'bg-zinc-900/50 border-zinc-800'
+                  }`}
                 >
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-[10px] font-medium ${
+                      entry.type === 'success' ? 'text-emerald-400' :
+                      entry.type === 'error' ? 'text-red-400' :
+                      'text-zinc-400'
+                    }`}>
+                      {entry.type.toUpperCase()}
+                    </span>
+                    <span className="text-[9px] text-zinc-600">
+                      {new Date(entry.timestamp).toLocaleTimeString('pt-BR')}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-zinc-300">{entry.input}</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">{entry.output}</p>
+                </div>
               ))}
+              
+              {jarvis.getRecentMemory(30).length === 0 && (
+                <div className="text-center py-8">
+                  <History className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-600">Nenhum registro ainda</p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* History */}
-          {history.length > 0 && (
-            <div>
-              <p className="text-[9px] font-bold text-zinc-600 uppercase mb-1">Histórico</p>
-              <div className="space-y-1 max-h-32 overflow-y-auto" ref={historyRef}>
-                {history.map((item, index) => (
-                  <div key={index} className="text-[10px] p-1.5 rounded bg-zinc-900">
-                    <span className="text-zinc-400">{item.input}</span>
-                    <span className="text-zinc-600 ml-2">{item.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        {/* ============================================================ */}
+        {/* TOOLS VIEW */}
+        {/* ============================================================ */}
+        {viewMode === 'tools' && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <h3 className="text-sm font-bold text-white mb-4">Tool Calls</h3>
+            
+            <div className="space-y-2">
+              {toolHistory.map((call) => (
+                <div key={call.id} className="p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-mono text-amber-400">{call.name}</span>
+                    <span className="text-[9px] text-zinc-600">
+                      {new Date(call.timestamp).toLocaleTimeString('pt-BR')}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-zinc-400 font-mono">
+                    {JSON.stringify(call.args, null, 2)}
+                  </p>
+                </div>
+              ))}
+              
+              {toolHistory.length === 0 && (
+                <div className="text-center py-8">
+                  <Command className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-600">Nenhum tool call registrado</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* SETTINGS VIEW */}
+        {/* ============================================================ */}
+        {viewMode === 'settings' && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <h3 className="text-sm font-bold text-white mb-4">Configurações JARVIS</h3>
+            
+            {/* Voice settings */}
+            <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
+              <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-amber-500" />
+                Voz
+              </h4>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] text-zinc-400 mb-1 block">Velocidade: {voiceConfig.rate.toFixed(1)}x</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={voiceConfig.rate}
+                    onChange={(e) => {
+                      const rate = parseFloat(e.target.value);
+                      setVoiceConfig(prev => ({ ...prev, rate }));
+                      jarvisVoice.setRate(rate);
+                    }}
+                    className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="text-[10px] text-zinc-400 mb-1 block">Tom: {voiceConfig.pitch.toFixed(1)}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={voiceConfig.pitch}
+                    onChange={(e) => {
+                      const pitch = parseFloat(e.target.value);
+                      setVoiceConfig(prev => ({ ...prev, pitch }));
+                      jarvisVoice.setPitch(pitch);
+                    }}
+                    className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Available tools */}
+            <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
+              <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                <Command className="w-4 h-4 text-amber-500" />
+                Ferramentas Disponíveis
+              </h4>
+              
+              <div className="space-y-1">
+                {jarvisTools.getAvailableTools().map((tool) => (
+                  <div key={tool.name} className="p-2 rounded-lg bg-zinc-800/50">
+                    <p className="text-[10px] font-mono text-amber-400">{tool.name}</p>
+                    <p className="text-[9px] text-zinc-500">{tool.description}</p>
                   </div>
                 ))}
               </div>
             </div>
-          )}
-        </div>
+
+            {/* Context info */}
+            <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
+              <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                <Brain className="w-4 h-4 text-amber-500" />
+                Contexto
+              </h4>
+              
+              <div className="space-y-2 text-[10px]">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Sessão:</span>
+                  <span className="text-zinc-300 font-mono">{jarvis.getRecentTurns(1).length > 0 ? 'Ativa' : 'Nova'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Memórias:</span>
+                  <span className="text-zinc-300">{jarvis.getRecentMemory(100).length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Último módulo:</span>
+                  <span className="text-zinc-300">{jarvis.getLastModule() || 'Nenhum'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
