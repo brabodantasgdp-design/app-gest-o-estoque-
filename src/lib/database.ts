@@ -5,16 +5,16 @@ import type { Tenant, Insumo, FichaTecnica, Product, Order, InvoiceScan, User, R
 // TABLE NAMES (PascalCase for Supabase)
 // ============================================
 const TABLES = {
-  TENANT: 'tenants',
-  INSUMO: 'insumos',
-  FICHA: 'fichas_tecnicas',
-  RECIPE_INGREDIENT: 'recipe_ingredients',
-  PRODUCT: 'products',
-  ORDER: 'orders',
-  ORDER_ITEM: 'order_items',
-  INVOICE: 'invoices',
-  INVOICE_ITEM: 'invoice_items',
-  USER: 'users',
+  TENANT: 'Tenant',
+  INSUMO: 'Insumo',
+  FICHA: 'FichaTecnica',
+  RECIPE_INGREDIENT: 'RecipeIngredient',
+  PRODUCT: 'Product',
+  ORDER: 'Order',
+  ORDER_ITEM: 'OrderItem',
+  INVOICE: 'Invoice',
+  INVOICE_ITEM: 'InvoiceItem',
+  USER: 'User',
 };
 
 // ============================================
