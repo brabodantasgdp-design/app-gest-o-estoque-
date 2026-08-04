@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, FileText, CheckCircle2, Image as ImageIcon, Calendar, Building2, Tag, Edit3, Save, Layers } from 'lucide-react';
+import { X, FileText, CheckCircle2, Image as ImageIcon, Calendar, Building2, Tag, Edit3, Save, Layers, RefreshCw } from 'lucide-react';
 import { InvoiceScan, InvoiceCategoryEnum, CurrencyType } from '../../types';
 
 interface InvoiceDetailModalProps {
@@ -28,6 +28,14 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     return `${symbol} ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // Calculate total from items
+  const itemsTotal = invoice.items?.reduce(
+    (sum, item) => sum + (item.totalCost || 0), 
+    0
+  ) || 0;
+  
+  const hasDiscrepancy = itemsTotal > 0 && Math.abs(itemsTotal - invoice.totalAmount) > 0.01;
+
   const handleSave = () => {
     const updated: InvoiceScan = {
       ...invoice,
@@ -37,6 +45,24 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
     onUpdateInvoice(updated);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const handleRecalculateTotal = () => {
+    if (invoice.items && invoice.items.length > 0) {
+      const newTotal = invoice.items.reduce(
+        (sum, item) => sum + (item.totalCost || 0), 
+        0
+      );
+      const updated: InvoiceScan = {
+        ...invoice,
+        totalAmount: newTotal,
+        category,
+        notes,
+      };
+      onUpdateInvoice(updated);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+    }
   };
 
   return (
@@ -125,7 +151,19 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
 
                 <div className="flex items-center justify-between text-xs pt-1">
                   <span className="text-zinc-400 font-bold">Valor Total Bruto</span>
-                  <span className="text-lg font-black text-amber-400">{formatCurrency(invoice.totalAmount)}</span>
+                  <div className="text-right">
+                    <span className="text-lg font-black text-amber-400">{formatCurrency(invoice.totalAmount)}</span>
+                    {hasDiscrepancy && (
+                      <div className="text-[10px] text-red-400 font-bold mt-0.5">
+                        Itens somam {formatCurrency(itemsTotal)} (diferença: {formatCurrency(Math.abs(itemsTotal - invoice.totalAmount))})
+                      </div>
+                    )}
+                    {!hasDiscrepancy && itemsTotal > 0 && (
+                      <div className="text-[10px] text-emerald-400 font-bold mt-0.5">
+                        ✓ Itens conferem
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -163,6 +201,17 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
                   className="w-full bg-[#18181b] border border-zinc-800 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-all resize-none"
                 />
               </div>
+
+              {hasDiscrepancy && invoice.items && invoice.items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRecalculateTotal}
+                  className="w-full py-2 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer hover:bg-emerald-500/20"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Corrigir Total (usar soma dos itens: {formatCurrency(itemsTotal)})
+                </button>
+              )}
 
               <button
                 type="button"

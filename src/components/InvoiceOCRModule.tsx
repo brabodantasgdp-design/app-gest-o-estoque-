@@ -124,6 +124,16 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
       const data = await response.json();
       if (data.success && data.invoiceData) {
         const inv = data.invoiceData;
+        
+        // Calculate total from items (more accurate than OCR total)
+        const calculatedTotal = inv.items?.reduce(
+          (sum: number, item: any) => sum + (item.totalCost || 0), 
+          0
+        ) || 0;
+        
+        // Use calculated total if available, otherwise use OCR total
+        const finalTotal = calculatedTotal > 0 ? calculatedTotal : (inv.totalAmount || 0);
+        
         const newScan: InvoiceScan = {
           id: `inv-${Date.now()}`,
           tenantId: activeTenantId,
@@ -131,7 +141,7 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
           cnpj: inv.cnpj || '00.000.000/0001-00',
           invoiceNumber: inv.invoiceNumber || `NF-${Math.floor(10000 + Math.random() * 90000)}`,
           invoiceDate: inv.invoiceDate || new Date().toISOString().split('T')[0],
-          totalAmount: inv.totalAmount || 1200,
+          totalAmount: finalTotal,
           category: inv.category || 'insumos',
           notes: inv.notes || 'Análise de Nota Fiscal realizada via OCR Gemini',
           items: inv.items || [],
