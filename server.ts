@@ -529,6 +529,268 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
     }
   });
 
+  // API Route: JARVIS AI Chat with Tool Calling
+  app.post("/api/jarvis", async (req, res) => {
+    try {
+      const { messages, companyId, tools: requestedTools } = req.body;
+
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ error: "Messages array is required" });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      
+      // Build context from company data
+      let systemContext = `Você é a JARVIS, a inteligência artificial de alta performance do sistema RetailPro/EBD.
+Seu tom é direto, extremamente profissional, sofisticado, conciso e leal ao operador.
+Responda sempre em português do Brasil de forma assertiva e sem rodeios.
+Você tem acesso total aos dados de insumos, fichas técnicas e vendas da empresa ID: ${companyId || 'default'}.
+Seja preciso nos cálculos e análises. Use dados reais quando disponíveis.`;
+
+      // If no API key, use local processing
+      if (!apiKey) {
+        console.warn("GEMINI_API_KEY missing, using local JARVIS processing");
+        
+        const lastMessage = messages[messages.length - 1]?.content || '';
+        const lower = lastMessage.toLowerCase();
+        
+        // Smart local responses
+        let response = '';
+        
+        if (lower.includes('estoque') || lower.includes('insumo')) {
+          response = "📊 Para consultar estoque, acesse o módulo de Insumos ou digite 'quanto tenho de [nome do item]'. Posso analisar seu estoque completo se você fornecer os dados.";
+        } else if (lower.includes('venda') || lower.includes('faturamento')) {
+          response = "💰 Para relatório de vendas, acesse o módulo de Pedidos. Posso calcular métricas como ticket médio, margem de lucro e tendências.";
+        } else if (lower.includes('preço') || lower.includes('custo')) {
+          response = "🏷️ Para consulta de preços, acesse o módulo de Produtos. Posso comparar preços e calcular margens de lucro.";
+        } else if (lower.includes('ajuda') || lower.includes('help')) {
+          response = `🧠 JARVIS - Comandos disponíveis:
+
+📦 ESTOQUE: "Quanto tenho de X?", "Estoque baixo", "Adicionar 5kg de X"
+🏷️ PRODUTOS: "Quanto custa X?", "Criar produto X por 50"
+🛒 PEDIDOS: "Criar pedido para Maria X 2"
+📊 RELATÓRIOS: "Resumo", "Relatório de vendas", "Margem de lucro"
+💡 DICAS: Fale naturalmente ou digite comandos`;
+        } else {
+          response = `Entendi: "${lastMessage}". 
+
+Sou a JARVIS do RetailPro. Posso ajudar com:
+• 📦 Consulta e gestão de estoque
+• 🏷️ Preços e margens de produtos
+• 🛋️ Criação e gestão de pedidos
+• 📊 Relatórios e análises
+• 💡 Dicas de negócio
+
+O que deseja fazer?`;
+        }
+
+        return res.json({
+          success: true,
+          response,
+          source: 'local_jarvis',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Use Gemini API
+      const { GoogleGenAI, Type } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey });
+
+      // Define tools for Gemini
+      const geminiTools = [
+        {
+          name: "query_stock",
+          description: "Consulta o estoque de um insumo específico",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              item_name: { type: Type.STRING, description: "Nome do insumo" },
+            },
+            required: ["item_name"],
+          },
+        },
+        {
+          name: "add_stock",
+          description: "Adiciona quantidade ao estoque de um insumo",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              item_name: { type: Type.STRING, description: "Nome do insumo" },
+              quantity: { type: Type.NUMBER, description: "Quantidade a adicionar" },
+              unit: { type: Type.STRING, description: "Unidade (kg, g, L, un)" },
+            },
+            required: ["item_name", "quantity"],
+          },
+        },
+        {
+          name: "create_product",
+          description: "Cria um novo produto no sistema",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING, description: "Nome do produto" },
+              price: { type: Type.NUMBER, description: "Preço de venda" },
+              cost: { type: Type.NUMBER, description: "Custo do produto" },
+            },
+            required: ["name", "price"],
+          },
+        },
+        {
+          name: "create_order",
+          description: "Cria um novo pedido",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              customer: { type: Type.STRING, description: "Nome do cliente" },
+              product: { type: Type.STRING, description: "Produto solicitado" },
+              quantity: { type: Type.NUMBER, description: "Quantidade" },
+            },
+            required: ["customer", "product"],
+          },
+        },
+        {
+          name: "get_analytics",
+          description: "Obtém análises e relatórios do negócio",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              type: { type: Type.STRING, description: "Tipo: stock, sales, profit, summary" },
+            },
+          },
+        },
+      ];
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: messages.map((m: any) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        })),
+        config: {
+          systemInstruction: systemContext,
+          tools: geminiTools,
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+        },
+      });
+
+      const responseText = response.text || "Desculpe, não consegui processar sua solicitação.";
+      
+      // Check if response has function calls
+      const functionCalls = response.functionCalls;
+      
+      return res.json({
+        success: true,
+        response: responseText,
+        functionCalls: functionCalls || [],
+        source: 'gemini_ai',
+        model: 'gemini-2.5-flash',
+        timestamp: new Date().toISOString(),
+      });
+
+    } catch (error: any) {
+      console.error("JARVIS API Error:", error);
+      return res.status(500).json({
+        success: false,
+        error: error.message || "Failed to process JARVIS request",
+        response: "Desculpe, ocorreu um erro ao processar sua solicitação. Tente novamente.",
+      });
+    }
+  });
+
+  // API Route: JARVIS Voice - Process voice command and execute
+  app.post("/api/jarvis/voice", async (req, res) => {
+    try {
+      const { command, companyId, context } = req.body;
+
+      if (!command) {
+        return res.status(400).json({ error: "Command is required" });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      
+      // Build full context with system data
+      let fullContext = `Comando de voz recebido: "${command}"
+Empresa ID: ${companyId || 'default'}
+Contexto do sistema: ${JSON.stringify(context || {})}`;
+
+      if (!apiKey) {
+        // Local voice command processing
+        const lower = command.toLowerCase();
+        let result = { success: false, action: '', message: '', data: null as any };
+
+        if (lower.includes('quanto tenho') || lower.includes('estoque de')) {
+          const itemMatch = lower.match(/(?:de|do|da)\s+(.+?)[\?\s]*$/);
+          const itemName = itemMatch ? itemMatch[1].trim() : '';
+          result = { 
+            success: true, 
+            action: 'query_stock', 
+            message: `Consultando estoque de ${itemName || 'itens'}...`,
+            data: { itemName }
+          };
+        } else if (lower.includes('criar produto')) {
+          result = { success: true, action: 'create_product', message: 'Abrindo formulário de criação de produto...' };
+        } else if (lower.includes('criar pedido')) {
+          result = { success: true, action: 'create_order', message: 'Abrindo formulário de novo pedido...' };
+        } else if (lower.includes('resumo') || lower.includes('dashboard')) {
+          result = { success: true, action: 'navigate', message: 'Navegando para o dashboard...', data: { module: 'dashboard' } };
+        } else {
+          result = { success: true, action: 'chat', message: `Processando comando: "${command}"` };
+        }
+
+        return res.json(result);
+      }
+
+      // Use Gemini for voice command processing
+      const { GoogleGenAI, Type } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: 'user', parts: [{ text: fullContext }] }],
+        config: {
+          systemInstruction: `Você é a JARVIS processando comandos de voz.
+Analise o comando e retorne JSON com:
+- action: ação a executar (query_stock, add_stock, create_product, create_order, navigate, chat)
+- params: parâmetros da ação
+- response: resposta amigável em português
+- success: se o comando é válido`,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              action: { type: Type.STRING },
+              params: { type: Type.OBJECT },
+              response: { type: Type.STRING },
+              success: { type: Type.BOOLEAN },
+            },
+            required: ["action", "response", "success"],
+          },
+        },
+      });
+
+      const text = response.text || '{"action":"chat","response":"Não consegui processar","success":false}';
+      const result = JSON.parse(text);
+
+      return res.json({
+        success: result.success,
+        action: result.action,
+        params: result.params || {},
+        message: result.response,
+        source: 'gemini_voice',
+        timestamp: new Date().toISOString(),
+      });
+
+    } catch (error: any) {
+      console.error("JARVIS Voice Error:", error);
+      return res.status(500).json({
+        success: false,
+        action: 'error',
+        message: error.message || "Failed to process voice command",
+      });
+    }
+  });
+
   // Vite Middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -8,6 +8,7 @@ import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
 import { jarvis, SystemState } from '../services/jarvisCore';
 import { jarvisVoice, VoiceConfig } from '../services/jarvisVoice';
 import { jarvisTools, ToolCall } from '../services/jarvisTools';
+import { geminiService } from '../services/geminiService';
 import { Insumo, Product, Order, FichaTecnica, InvoiceScan, Tenant } from '../types';
 
 interface VoiceAssistantProps {
@@ -82,6 +83,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     setToolHistory(jarvisTools.getCallHistory(20));
   }, [isProcessing]);
 
+  // Set company ID for Gemini
+  useEffect(() => {
+    if (activeTenantId) {
+      geminiService.setCompanyId(activeTenantId);
+    }
+  }, [activeTenantId]);
+
   // Auto-scroll
   useEffect(() => {
     if (historyRef.current) {
@@ -114,8 +122,22 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       // Add user turn to context
       jarvis.addTurn('user', text);
       
-      // Process with JARVIS tools
-      const response = await jarvisTools.processNaturalLanguage(text, activeTenantId);
+      // Try Gemini first, fallback to local tools
+      let response;
+      
+      try {
+        // Use Gemini for intelligent processing
+        const geminiResponse = await geminiService.chat(text);
+        response = {
+          success: geminiResponse.success,
+          message: geminiResponse.response,
+          data: geminiResponse.functionCalls?.[0] ? { navigate: geminiResponse.functionCalls[0].args?.module } : null,
+        };
+      } catch (geminiError) {
+        console.log('Gemini unavailable, using local tools');
+        // Fallback to local JARVIS tools
+        response = await jarvisTools.processNaturalLanguage(text, activeTenantId);
+      }
       
       // Add JARVIS turn to context
       jarvis.addTurn('jarvis', response.message);
