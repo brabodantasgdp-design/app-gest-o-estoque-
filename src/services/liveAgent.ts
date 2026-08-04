@@ -61,50 +61,6 @@ const ProductCreateSchema = z.object({
 });
 
 // ============================================================
-// HUMANIZED RESPONSES — Variação natural de tom
-// ============================================================
-
-const GREETINGS = [
-  "EBD na escuta, chefe.",
-  "Pronto pra trabalhar.",
-  "Tudo certo por aqui.",
-  "Fala, Brabo.",
-];
-
-const CONFIRMATIONS = {
-  register: [
-    "Beleza, {name} cadastrado com {qty}{unit} em estoque.",
-    "Pronto, {name} já tá no sistema. {qty}{unit} disponível.",
-    "Registrei {name} aqui. Começando com {qty}{unit}.",
-  ],
-  add: [
-    "Feito. +{qty}{unit} de {name}. Total agora: {total}{unit}.",
-    "Adicionei {qty}{unit} de {name}. Estoque: {total}{unit}.",
-    "Entrada registrada: {qty}{unit} de {name}. Ficou {total}{unit}.",
-  ],
-  remove: [
-    "Anotado. -{qty}{unit} de {name}. Restam {total}{unit}.",
-    "Baixa dada: {qty}{unit} de {name}. Saldo: {total}{unit}.",
-  ],
-  warning: [
-    "Atenção: {name} tá com {total}{unit}, abaixo do mínimo de {min}{unit}.",
-    "Cuidado com {name}: só {total}{unit}, mínimo é {min}{unit}.",
-  ],
-  empty: [
-    "{name} zerou! Precisa repor urgente.",
-    "Chefe, {name} acabou. Zero no estoque.",
-  ],
-};
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function fmt(text: string, vars: Record<string, any>): string {
-  return text.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
-}
-
-// ============================================================
 // TOOLS — Gemini Function Declarations
 // ============================================================
 
@@ -410,8 +366,7 @@ export class LiveAgent {
   private reconnectAttempts = 0;
   private proactiveTimer: ReturnType<typeof setInterval> | null = null;
   private memory: MemoryStore | null = null;
-  private audioElement: HTMLAudioElement | null = null;
-  private lastProactiveCheck = 0;
+  private audioCtx: AudioContext | null = null;
   private proactiveInterval: number;
 
   state: LiveAgentState = {
@@ -479,7 +434,10 @@ export class LiveAgent {
     this.clearTimers();
     this.session?.close?.();
     this.mediaStream?.getTracks().forEach((t) => t.stop());
+    this.mediaStream = null;
     this.stopProactiveMonitoring();
+    this.audioCtx?.close();
+    this.audioCtx = null;
     this.update({ status: "disconnected", listening: false });
   }
 
@@ -510,10 +468,14 @@ export class LiveAgent {
   private async connectLive() {
     if (!this.ai) throw new Error("AI not initialized");
 
+    // Inject memory context into system instruction
+    const memoryContext = this.memory ? this.buildMemoryPrompt() : "";
+    const fullSystemPrompt = SYSTEM_INSTRUCTION + memoryContext;
+
     this.session = await this.ai.live.connect({
       model: "gemini-live-2.5-flash-preview",
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: fullSystemPrompt,
         tools: TOOLS as any,
         responseModalities: ["AUDIO"] as any,
         generationConfig: {
@@ -523,7 +485,7 @@ export class LiveAgent {
         },
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: "Kore" },
+            prebuiltVoiceConfig: {},
           },
         },
         inputAudioTranscription: {},
@@ -598,14 +560,41 @@ export class LiveAgent {
       return;
     }
 
-    // Text/transcription from Gemini
+    // Server content: text + audio
     if (msg.serverContent?.modelTurn?.parts) {
       for (const part of msg.serverContent.modelTurn.parts) {
         if (part.text) {
           this.update({ lastResponse: part.text });
           this.memory?.remember("last_response", part.text);
         }
+        // Play inline audio from Gemini
+        if (part.inlineData?.data && part.inlineData?.mimeType?.startsWith("audio/")) {
+          this.playAudioChunk(part.inlineData.data);
+        }
       }
+    }
+  }
+
+  private async playAudioChunk(base64: string) {
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new AudioContext({ sampleRate: 24000 });
+      }
+      if (this.audioCtx.state === "suspended") {
+        await this.audioCtx.resume();
+      }
+
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      const audioBuffer = await this.audioCtx.decodeAudioData(bytes.buffer.slice(0));
+      const source = this.audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.audioCtx.destination);
+      source.start(0);
+    } catch {
+      // Audio decode might fail for streaming chunks — ignore gracefully
     }
   }
 
@@ -816,7 +805,7 @@ export class LiveAgent {
   }
 
   // ============================================================
-  // TEXT INPUT (fallback for non-audio environments)
+  // TEXT INPUT (fallback)
   // ============================================================
 
   async sendText(text: string) {
@@ -832,27 +821,28 @@ export class LiveAgent {
     // Offline fallback
     const intent = offlineParse(text);
     if (intent.tool === "unknown" || intent.confidence < 0.5) {
-      this.update({ lastResponse: "Desculpe, não entendi. Tente: cadastrar insumo, adicionar estoque, resumo, ou alertas." });
+      const msg = "Desculpe, não entendi. Tente: cadastrar insumo, adicionar estoque, resumo, ou alertas.";
+      this.update({ lastResponse: msg });
+      this.ttsSpeak(msg);
       return;
     }
 
-    // Execute locally via the same validateAndExecute pipeline
     try {
       const ctx = this.config.context;
       if (!ctx) return;
       const result = await this.validateAndExecute(intent.tool, intent.args, ctx);
-      this.update({ lastAction: intent.tool, lastResponse: JSON.stringify(result) });
+      const msg = typeof result === "string" ? result : JSON.stringify(result);
+      this.update({ lastAction: intent.tool, lastResponse: msg });
       this.memory?.remember(`last_${intent.tool}`, { args: intent.args, result, time: Date.now() });
+      this.ttsSpeak(msg);
     } catch (err: any) {
-      this.update({ lastResponse: `Erro: ${err.message}` });
+      const msg = `Erro: ${err.message}`;
+      this.update({ lastResponse: msg });
+      this.ttsSpeak(msg);
     }
   }
 
-  // ============================================================
-  // SPEAK — Browser TTS
-  // ============================================================
-
-  speak(text: string) {
+  private ttsSpeak(text: string) {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -861,6 +851,19 @@ export class LiveAgent {
       utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
+  }
+
+  private buildMemoryPrompt(): string {
+    if (!this.memory) return "";
+    const recent = this.memory.getRecent(3);
+    if (recent.length === 0) return "";
+
+    let prompt = "\n\n## MEMÓRIA DE SESSÕES ANTERIORES\n";
+    for (const entry of recent) {
+      prompt += `- ${entry.key}: ${JSON.stringify(entry.value).slice(0, 120)}\n`;
+    }
+    prompt += "\nUse esse histórico para ser mais contextual e proativo. Se o chefe já falou de algo antes, faça referência.";
+    return prompt;
   }
 }
 
