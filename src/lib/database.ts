@@ -439,3 +439,29 @@ function mapInvoice(row: any): InvoiceScan {
     processed: row.processed, processedAt: row.processed_at, items,
   };
 }
+
+// ============================================
+// DATA FETCHER FOR VOICE ASSISTANT
+// ============================================
+export const dataFetcher = {
+  async getAllForVoiceAssistant(tenantId: string) {
+    if (!isConfigured) {
+      return { insumos: [], products: [], orders: [], fichas: [], invoices: [] };
+    }
+    
+    try {
+      const [insumos, products, orders, fichas, invoices] = await Promise.all([
+        insumosService.getByTenant(tenantId),
+        productsService.getByTenant(tenantId),
+        ordersService.getByTenant(tenantId),
+        fichasService.getByTenant(tenantId),
+        invoicesService.getByTenant(tenantId),
+      ]);
+      
+      return { insumos, products, orders, fichas, invoices };
+    } catch (err) {
+      console.error('Error fetching data for voice assistant:', err);
+      return { insumos: [], products: [], orders: [], fichas: [], invoices: [] };
+    }
+  }
+};
