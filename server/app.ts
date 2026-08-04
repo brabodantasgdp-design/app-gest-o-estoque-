@@ -13,6 +13,7 @@ export function createApp() {
 
   app.use("/api/auth", authRoutes());
   app.use("/api/invoices", invoiceRoutes());
+  app.use("/api/dashboard", invoiceRoutes()); // /api/dashboard alias
   app.use("/api/ocr-invoice", ocrRoutes());
   app.use("/api/ebdAi", aiRoutes());
 
