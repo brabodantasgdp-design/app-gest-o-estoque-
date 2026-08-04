@@ -143,11 +143,85 @@ async function startServer() {
   // Middleware to parse large json payloads (e.g. invoice photos)
   app.use(express.json({ limit: "25mb" }));
 
-  // API Route: Authentication Login
-  app.post("/api/auth/login", (req, res) => {
+  // API Route: Authentication Login (Supabase backed)
+  app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
 
-    if (email === "brabo.dantas.gdp@gmail.com" || email === "admin@retailpro.com.br" || email === "superadmin@retailpro.com") {
+    try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+
+      if (supabaseUrl && supabaseKey) {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        // Try Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (!authError && authData.user) {
+          // Get user profile from users table
+          const { data: userProfile } = await supabase
+            .from('users')
+            .select('*, tenants(name)')
+            .eq('id', authData.user.id)
+            .single();
+
+          if (userProfile) {
+            return res.json({
+              success: true,
+              user: {
+                id: userProfile.id,
+                name: userProfile.name,
+                email: userProfile.email,
+                role: userProfile.role,
+                tenantId: userProfile.tenant_id,
+                tenantName: userProfile.tenants?.name || '',
+              },
+              token: authData.session?.access_token
+            });
+          }
+        }
+
+        // If Supabase auth fails, try direct user lookup
+        const { data: user } = await supabase
+          .from('users')
+          .select('*, tenants(name)')
+          .eq('email', email)
+          .single();
+
+        if (user) {
+          // Create account if doesn't exist in Auth
+          const { data: signUpData } = await supabase.auth.signUp({
+            email,
+            password: password || 'default123',
+            options: {
+              data: { name: user.name, role: user.role, tenant_id: user.tenant_id }
+            }
+          });
+
+          return res.json({
+            success: true,
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              tenantId: user.tenant_id,
+              tenantName: user.tenants?.name || '',
+            },
+            token: signUpData?.session?.access_token
+          });
+        }
+      }
+    } catch (err) {
+      console.log("Supabase not configured, using fallback auth");
+    }
+
+    // Fallback: super admin by email
+    if (email === "brabo.dantas.gdp@gmail.com") {
       return res.json({
         success: true,
         user: {
@@ -158,41 +232,11 @@ async function startServer() {
           tenantId: undefined,
           tenantName: "Painel Global SaaS",
         },
-        token: "jwt_super_admin_secret_token_123"
+        token: "jwt_fallback_token"
       });
     }
 
-    if (email === "alexandre@padariagourmet.com.br") {
-      return res.json({
-        success: true,
-        user: {
-          id: "usr-tenant-1",
-          name: "Alexandre Silva",
-          email: email,
-          role: "store_owner",
-          tenantId: "tenant-1",
-          tenantName: "Padaria & Confeitaria Artesanal Gourmet",
-        },
-        token: "jwt_tenant_1_token_456"
-      });
-    }
-
-    if (email === "mariana@cafecentral.com") {
-      return res.json({
-        success: true,
-        user: {
-          id: "usr-tenant-2",
-          name: "Mariana Costa",
-          email: email,
-          role: "store_owner",
-          tenantId: "tenant-2",
-          tenantName: "Bistrô & Café Central",
-        },
-        token: "jwt_tenant_2_token_789"
-      });
-    }
-
-    // Default owner fallback
+    // Default fallback
     return res.json({
       success: true,
       user: {
@@ -200,8 +244,8 @@ async function startServer() {
         name: email ? email.split("@")[0] : "Lojista Pro",
         email: email || "dono@loja.com.br",
         role: "store_owner",
-        tenantId: "tenant-1",
-        tenantName: "Padaria & Confeitaria Artesanal Gourmet",
+        tenantId: tenants?.[0]?.id || "tenant-1",
+        tenantName: tenants?.[0]?.name || "Loja Demo",
       },
       token: "jwt_demo_token_000"
     });

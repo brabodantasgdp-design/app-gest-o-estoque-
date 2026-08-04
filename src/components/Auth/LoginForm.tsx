@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Store, Lock, Mail, ArrowRight, CheckCircle2, UserCheck, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 import { User, Tenant } from '../../types';
+import { authService } from '../../lib/database';
 
 interface LoginFormProps {
   onLoginSuccess: (user: User) => void;
@@ -8,8 +9,8 @@ interface LoginFormProps {
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants }) => {
-  const [email, setEmail] = useState('alexandre@padariagourmet.com.br');
-  const [password, setPassword] = useState('••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -19,54 +20,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
     setError('');
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+      const result = await authService.login(email, password);
 
-      const data = await response.json();
-
-      if (data.success && data.user) {
-        onLoginSuccess(data.user);
+      if (result.success && result.user) {
+        onLoginSuccess(result.user);
       } else {
-        setError(data.message || 'Falha na autenticação Supabase Auth.');
+        setError(result.message || 'Falha na autenticação. Verifique suas credenciais.');
       }
     } catch (err) {
-      // Fallback local auth simulation if server is rebooting
-      if (email.includes('super') || email.includes('admin') || email === 'brabo.dantas.gdp@gmail.com') {
-        onLoginSuccess({
-          id: 'usr-superadmin',
-          name: 'Brabo Dantas',
-          email: email,
-          role: 'super_admin',
-          tenantName: 'Painel Global SaaS',
-        });
-      } else {
-        onLoginSuccess({
-          id: 'usr-tenant-1',
-          name: 'Alexandre Silva',
-          email: email,
-          role: 'store_owner',
-          tenantId: 'tenant-1',
-          tenantName: 'Padaria & Confeitaria Artesanal Gourmet',
-        });
-      }
+      setError('Erro ao conectar com o servidor. Tente novamente.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleQuickSelect = (type: 'super_admin' | 'owner_1' | 'owner_2') => {
-    if (type === 'super_admin') {
-      setEmail('brabo.dantas.gdp@gmail.com');
-      setPassword('87849244');
-    } else if (type === 'owner_1') {
-      setEmail('alexandre@padariagourmet.com.br');
-      setPassword('padaria123');
-    } else if (type === 'owner_2') {
-      setEmail('mariana@cafecentral.com');
-      setPassword('cafe123456');
     }
   };
 
@@ -89,55 +53,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
           <p className="text-xs text-zinc-400">
             Acesso seguro via <strong className="text-amber-400">Supabase Auth</strong> & PostgreSQL
           </p>
-        </div>
-
-        {/* Quick Demo Role Selector */}
-        <div className="bg-[#18181b] border border-zinc-800/80 rounded-xl p-3 space-y-2">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 flex items-center gap-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-amber-500" />
-            <span>Atalhos Rápidos de Teste (Multi-tenancy)</span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-            <button
-              type="button"
-              onClick={() => handleQuickSelect('owner_1')}
-              className={`p-2 rounded-lg border text-left font-semibold transition-all ${
-                email.includes('alexandre')
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
-              }`}
-            >
-              <div className="font-bold text-xs truncate">Padaria Gourmet</div>
-              <div className="text-[9px] text-zinc-500">Store Owner</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickSelect('owner_2')}
-              className={`p-2 rounded-lg border text-left font-semibold transition-all ${
-                email.includes('mariana')
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
-              }`}
-            >
-              <div className="font-bold text-xs truncate">Bistrô Central</div>
-              <div className="text-[9px] text-zinc-500">Store Owner</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickSelect('super_admin')}
-              className={`p-2 rounded-lg border text-left font-semibold transition-all ${
-                email.includes('admin') || email.includes('brabo')
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
-              }`}
-            >
-              <div className="font-bold text-xs truncate">Super Admin</div>
-              <div className="text-[9px] text-amber-400">Acesso Total</div>
-            </button>
-          </div>
         </div>
 
         {error && (
@@ -172,6 +87,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
                 className="w-full bg-[#18181b] border border-zinc-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-all"
               />
             </div>
@@ -183,7 +99,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-black font-extrabold text-xs tracking-wide shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {loading ? (
-              <span>Autenticando via Supabase...</span>
+              <span>Autenticando...</span>
             ) : (
               <>
                 <span>Entrar na Plataforma</span>

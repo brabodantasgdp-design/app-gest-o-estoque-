@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
 import { DashboardView } from './components/Dashboard/DashboardView';
@@ -11,51 +11,123 @@ import { OrdersModule } from './components/OrdersModule';
 import { SuperAdminModule } from './components/SuperAdminModule';
 import { LoginForm } from './components/Auth/LoginForm';
 import {
-  INITIAL_TENANTS,
-  INITIAL_INSUMOS,
-  INITIAL_FICHAS,
-  INITIAL_PRODUCTS,
-  INITIAL_ORDERS,
-  SAMPLE_INVOICES
-} from './data/mockData';
-import { CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User } from './types';
-import { TrendingUp, DollarSign, PieChart, ShieldCheck, Database, Cpu, LogOut, UserCheck, Edit2, X, Save } from 'lucide-react';
+  CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
+} from './types';
+import { LogOut, UserCheck, Edit2, X, Save } from 'lucide-react';
+import {
+  tenantsService,
+  insumosService,
+  fichasService,
+  productsService,
+  ordersService,
+  invoicesService,
+  authService
+} from './lib/database';
 
 export default function App() {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currency, setCurrency] = useState<CurrencyType>('BRL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
+
+  // Profile edit modal
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
 
-  // Multi-tenant State
-  const [tenants, setTenants] = useState<Tenant[]>(INITIAL_TENANTS);
-  const [activeTenantId, setActiveTenantId] = useState<string>('tenant-1');
+  // Data state
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [activeTenantId, setActiveTenantId] = useState<string>('');
+  const [allInsumos, setAllInsumos] = useState<Insumo[]>([]);
+  const [allFichas, setAllFichas] = useState<FichaTecnica[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const [allInvoices, setAllInvoices] = useState<InvoiceScan[]>([]);
 
-  // Core Store Data
-  const [allInsumos, setAllInsumos] = useState<Insumo[]>(INITIAL_INSUMOS);
-  const [allFichas, setAllFichas] = useState<FichaTecnica[]>(INITIAL_FICHAS);
-  const [allProducts, setAllProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [allOrders, setAllOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [allInvoices, setAllInvoices] = useState<InvoiceScan[]>(SAMPLE_INVOICES);
+  // Check for existing session
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const user = await authService.getCurrentUser();
+        if (user) {
+          setCurrentUser(user);
+          if (user.tenantId) {
+            setActiveTenantId(user.tenantId);
+          }
+        }
+      } catch (err) {
+        console.log('No session found');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    checkSession();
+  }, []);
 
-  // Filtered store data scoped exclusively to activeTenantId (Isolated Multi-Tenancy)
-  const tenantInsumos = useMemo(() => allInsumos.filter((i) => i.tenantId === activeTenantId), [allInsumos, activeTenantId]);
-  const tenantFichas = useMemo(() => allFichas.filter((f) => f.tenantId === activeTenantId), [allFichas, activeTenantId]);
-  const tenantProducts = useMemo(() => allProducts.filter((p) => p.tenantId === activeTenantId), [allProducts, activeTenantId]);
-  const tenantOrders = useMemo(() => allOrders.filter((o) => o.tenantId === activeTenantId), [allOrders, activeTenantId]);
-  const tenantInvoices = useMemo(() => allInvoices.filter((i) => i.tenantId === activeTenantId), [allInvoices, activeTenantId]);
+  // Load tenants (only for super admin)
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'super_admin') return;
+
+    const loadTenants = async () => {
+      try {
+        const data = await tenantsService.getAll();
+        setTenants(data);
+      } catch (err) {
+        console.error('Error loading tenants:', err);
+      }
+    };
+    loadTenants();
+  }, [currentUser]);
+
+  // Load data for active tenant
+  useEffect(() => {
+    if (!activeTenantId) return;
+
+    const loadAllData = async () => {
+      try {
+        const [insumos, fichas, products, orders, invoices] = await Promise.all([
+          insumosService.getByTenant(activeTenantId),
+          fichasService.getByTenant(activeTenantId),
+          productsService.getByTenant(activeTenantId),
+          ordersService.getByTenant(activeTenantId),
+          invoicesService.getByTenant(activeTenantId),
+        ]);
+
+        setAllInsumos(insumos);
+        setAllFichas(fichas);
+        setAllProducts(products);
+        setAllOrders(orders);
+        setAllInvoices(invoices);
+      } catch (err) {
+        console.error('Error loading data:', err);
+      }
+    };
+    loadAllData();
+  }, [activeTenantId]);
+
+  // Filtered data scoped to active tenant
+  const tenantInsumos = useMemo(() => allInsumos, [allInsumos]);
+  const tenantFichas = useMemo(() => allFichas, [allFichas]);
+  const tenantProducts = useMemo(() => allProducts, [allProducts]);
+  const tenantOrders = useMemo(() => allOrders, [allOrders]);
+  const tenantInvoices = useMemo(() => allInvoices, [allInvoices]);
 
   const currentTenant = tenants.find((t) => t.id === activeTenantId);
-
-  // Count low stock insumos for active store sidebar notification badge
   const lowStockCount = tenantInsumos.filter((i) => i.currentStock <= i.minStock).length;
 
+  // Show loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0B0B0C] flex items-center justify-center">
+        <div className="text-amber-400 font-bold text-sm animate-pulse">Carregando...</div>
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
   if (!currentUser) {
     return (
       <LoginForm
@@ -65,82 +137,48 @@ export default function App() {
           if (user.tenantId) {
             setActiveTenantId(user.tenantId);
           }
+          // Load tenants for super admin
+          if (user.role === 'super_admin') {
+            tenantsService.getAll().then(setTenants).catch(console.error);
+          }
         }}
       />
     );
   }
 
-  // Handlers for state updates while maintaining tenantId scoping
-  const handleSetInsumos = (action: React.SetStateAction<Insumo[]>) => {
-    if (typeof action === 'function') {
-      const updatedTenantInsumos = action(tenantInsumos);
-      const otherInsumos = allInsumos.filter((i) => i.tenantId !== activeTenantId);
-      setAllInsumos([...otherInsumos, ...updatedTenantInsumos]);
-    } else {
-      const otherInsumos = allInsumos.filter((i) => i.tenantId !== activeTenantId);
-      setAllInsumos([...otherInsumos, ...action]);
-    }
-  };
+  // Handlers for CRUD operations
+  const handleSetInsumos = useCallback((action: React.SetStateAction<Insumo[]>) => {
+    setAllInsumos(action);
+  }, []);
 
-  const handleSetFichas = (action: React.SetStateAction<FichaTecnica[]>) => {
-    if (typeof action === 'function') {
-      const updatedTenantFichas = action(tenantFichas);
-      const otherFichas = allFichas.filter((f) => f.tenantId !== activeTenantId);
-      setAllFichas([...otherFichas, ...updatedTenantFichas]);
-    } else {
-      const otherFichas = allFichas.filter((f) => f.tenantId !== activeTenantId);
-      setAllFichas([...otherFichas, ...action]);
-    }
-  };
+  const handleSetFichas = useCallback((action: React.SetStateAction<FichaTecnica[]>) => {
+    setAllFichas(action);
+  }, []);
 
-  const handleSetProducts = (action: React.SetStateAction<Product[]>) => {
-    if (typeof action === 'function') {
-      const updatedTenantProducts = action(tenantProducts);
-      const otherProducts = allProducts.filter((p) => p.tenantId !== activeTenantId);
-      setAllProducts([...otherProducts, ...updatedTenantProducts]);
-    } else {
-      const otherProducts = allProducts.filter((p) => p.tenantId !== activeTenantId);
-      setAllProducts([...otherProducts, ...action]);
-    }
-  };
+  const handleSetProducts = useCallback((action: React.SetStateAction<Product[]>) => {
+    setAllProducts(action);
+  }, []);
 
-  const handleSetOrders = (action: React.SetStateAction<Order[]>) => {
-    if (typeof action === 'function') {
-      const updatedTenantOrders = action(tenantOrders);
-      const otherOrders = allOrders.filter((o) => o.tenantId !== activeTenantId);
-      setAllOrders([...otherOrders, ...updatedTenantOrders]);
-    } else {
-      const otherOrders = allOrders.filter((o) => o.tenantId !== activeTenantId);
-      setAllOrders([...otherOrders, ...action]);
-    }
-  };
+  const handleSetOrders = useCallback((action: React.SetStateAction<Order[]>) => {
+    setAllOrders(action);
+  }, []);
 
-  const handleSetInvoices = (action: React.SetStateAction<InvoiceScan[]>) => {
-    if (typeof action === 'function') {
-      const updatedTenantInvoices = action(tenantInvoices);
-      const otherInvoices = allInvoices.filter((i) => i.tenantId !== activeTenantId);
-      setAllInvoices([...otherInvoices, ...updatedTenantInvoices]);
-    } else {
-      const otherInvoices = allInvoices.filter((i) => i.tenantId !== activeTenantId);
-      setAllInvoices([...otherInvoices, ...action]);
-    }
-  };
+  const handleSetInvoices = useCallback((action: React.SetStateAction<InvoiceScan[]>) => {
+    setAllInvoices(action);
+  }, []);
 
-  const handleSaveToProducts = (newProduct: Product) => {
-    const productWithTenant = { ...newProduct, tenantId: activeTenantId };
-    setAllProducts([productWithTenant, ...allProducts]);
-  };
+  const handleSaveToProducts = useCallback((newProduct: Product) => {
+    setAllProducts(prev => [{ ...newProduct, tenantId: activeTenantId }, ...prev]);
+  }, [activeTenantId]);
 
-  const handleSelectTenantContext = (tenantId: string) => {
+  const handleSelectTenantContext = useCallback((tenantId: string) => {
     setActiveTenantId(tenantId);
     setActiveTab('dashboard');
-  };
+  }, []);
 
   const handleOpenProfile = () => {
-    if (currentUser) {
-      setProfileName(currentUser.name);
-      setProfileEmail(currentUser.email);
-    }
+    setProfileName(currentUser.name);
+    setProfileEmail(currentUser.email);
     setIsProfileModalOpen(true);
   };
 
@@ -195,7 +233,10 @@ export default function App() {
           </button>
           <span className="text-zinc-600">|</span>
           <button
-            onClick={() => setCurrentUser(null)}
+            onClick={() => {
+              authService.logout();
+              setCurrentUser(null);
+            }}
             className="text-xs font-bold text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -276,7 +317,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'super_admin' && (
+          {activeTab === 'super_admin' && currentUser.role === 'super_admin' && (
             <SuperAdminModule
               tenants={tenants}
               setTenants={setTenants}
@@ -326,7 +367,7 @@ export default function App() {
 
               <div className="p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-4 max-w-2xl">
                 <div className="flex items-center gap-3">
-                  <Cpu className="w-5 h-5 text-amber-500" />
+                  <div className="w-5 h-5 text-amber-500">⚡</div>
                   <div>
                     <h3 className="text-sm font-extrabold text-white">Modelo Gemini OCR Ativo</h3>
                     <p className="text-xs text-zinc-400">gemini-3.6-flash em modo server-side seguro com visual schema OCR</p>
@@ -334,10 +375,10 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center gap-3 pt-4 border-t border-zinc-800">
-                  <Database className="w-5 h-5 text-amber-500" />
+                  <div className="w-5 h-5 text-amber-500">🗄️</div>
                   <div>
-                    <h3 className="text-sm font-extrabold text-white">Banco de Dados PostgreSQL (Supabase) + Prisma</h3>
-                    <p className="text-xs text-zinc-400">Pronto para deploy na Vercel com pooling e arquivo prisma/schema.prisma</p>
+                    <h3 className="text-sm font-extrabold text-white">Banco de Dados PostgreSQL (Supabase)</h3>
+                    <p className="text-xs text-zinc-400">Conectado e sincronizado com RLS multi-tenant ativo</p>
                   </div>
                 </div>
               </div>
