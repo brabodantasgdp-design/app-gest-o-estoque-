@@ -582,19 +582,7 @@ export default function App() {
       )}
 
       {/* Voice Assistant Floating Button */}
-      <button
-        onClick={() => setIsVoiceAssistantOpen(true)}
-        className="fixed bottom-24 lg:bottom-8 right-4 lg:right-8 z-40 p-4 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-black shadow-lg shadow-orange-500/30 hover:from-amber-600 hover:to-orange-600 transition-all active:scale-95"
-      >
-        <Mic className="w-6 h-6" />
-      </button>
-
-      {/* Voice Assistant Modal */}
-      <SimpleVoiceAssistant
-        isOpen={isVoiceAssistantOpen}
-        onClose={() => setIsVoiceAssistantOpen(false)}
-        onNavigate={handleVoiceNavigate}
-      />
+      {/* Voice button removed - focusing on OCR photo analysis */}
 
     </div>
   );

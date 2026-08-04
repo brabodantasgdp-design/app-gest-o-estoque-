@@ -444,15 +444,42 @@ async function startServer() {
 
       const systemInstruction = `
 Você é um especialista em OCR e análise financeira fiscal de Notas Fiscais Eletrônicas (NF-e, NFC-e) para varejo e restaurantes.
-Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão:
-1. Nome do Fornecedor / Razão Social
-2. CNPJ
-3. Número da Nota Fiscal
-4. Data de emissão (YYYY-MM-DD)
-5. Valor total bruto da nota (number)
-6. Categoria geral da nota (uma das seguintes exatas: 'alimentacao', 'transporte', 'servicos', 'insumos', 'impostos', 'outros')
-7. Observações livres resumidas (notes)
-8. Lista detalhada de insumos / itens comprados com quantidades convertidas em g, ml ou un.
+
+## SUA TAREFA
+Analise a imagem/documento da nota fiscal e extraia COM PRECISÃO TODOS os dados visíveis.
+
+## CAMPOS OBRIGATÓRIOS (extrair TODOS):
+1. **supplierName** - Nome/Razão Social do Fornecedor (COMPLETO, sem abreviar)
+2. **cnpj** - CNPJ do fornecedor (formato: XX.XXX.XXX/XXXX-XX)
+3. **invoiceNumber** - Número da Nota Fiscal
+4. **invoiceDate** - Data de emissão (formato: YYYY-MM-DD)
+5. **totalAmount** - Valor total bruto da nota (number, sem R$)
+6. **category** - Categoria: 'alimentacao', 'transporte', 'servicos', 'insumos', 'impostos', 'outros'
+7. **notes** - Observações resumidas (máx 200 caracteres)
+
+## ITENS DA NOTA (CRÍTICO - extrair TODOS os itens):
+Para CADA item da nota, extraia:
+- **rawName** - Nome ORIGINAL do produto como está na nota (NÃO resumir)
+- **matchedInsumoName** - Nome limpo e padronizado para cadastro
+- **quantity** - Quantidade TOTAL convertida para g, ml ou un (EX: 15kg = 15000g)
+- **unit** - Unidade: 'g' para sólidos, 'ml' para líquidos, 'un' para unidades
+- **unitCost** - Custo unitário por grama/ml/unidade
+- **totalCost** - Custo total do item (quantidade × custo unitário)
+- **category** - Categoria do item: 'Farináceos & Grãos', 'Açúcares', 'Laticínios', 'Bebidas & Grãos', 'Carnes & Frios', 'Frutas & Verduras', 'Temperos & Condimentos', 'Embalagens', 'Outros'
+
+## REGRAS DE CONVERSÃO:
+- Pesos: 1kg = 1000g, 1 sack = 60kg = 60000g, 1 bag = 15kg = 15000g
+- Líquidos: 1L = 1000ml, 1 galão = 5L = 5000ml
+- Cálculo: unitCost = totalCost / quantity
+
+## FORMATO DE RESPOSTA
+Retorne JSON válido com a estrutura exata solicitada. NÃO inclua texto fora do JSON.
+Se não conseguir ler algum campo, use null ou valor padrão razoável.
+
+## IMPORTANTE
+- Leia TODOS os itens visíveis na nota (não pule nenhum)
+- Seja preciso nos valores e quantidades
+- O sistema usará esses dados para atualizar estoque AUTOMATICAMENTE
 `;
 
       let contents: any;
@@ -466,7 +493,7 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
               },
             },
             {
-              text: "Faça a leitura OCR desta Nota Fiscal de compra e retorne os itens, valores e categoria estruturados.",
+              text: "Analise esta Nota Fiscal eletrônica. Extraia TODOS os dados: fornecedor, CNPJ, número, data, valor total, e TODOS os itens com quantidades, unidades e custos. Retorne JSON estruturado.",
             },
           ],
         };
@@ -475,7 +502,7 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.5-flash",
         contents,
         config: {
           systemInstruction,
@@ -500,7 +527,7 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
                     quantity: { type: Type.NUMBER },
                     unit: { type: Type.STRING },
                     unitCost: { type: Type.NUMBER },
-                    totalCost: { type: Type.NUMBER },
+                     totalCost: { type: Type.NUMBER },
                     category: { type: Type.STRING },
                   },
                   required: ["rawName", "matchedInsumoName", "quantity", "unit", "unitCost", "totalCost"],
