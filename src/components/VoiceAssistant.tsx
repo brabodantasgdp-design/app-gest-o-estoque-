@@ -5,9 +5,9 @@ import {
   MessageCircle, Command, Trash2, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
-import { jarvis, SystemState } from '../services/jarvisCore';
-import { jarvisVoice, VoiceConfig } from '../services/jarvisVoice';
-import { jarvisTools, ToolCall } from '../services/jarvisTools';
+import { ebdAi, SystemState } from '../services/jarvisCore';
+import { ebdAiVoice, VoiceConfig } from '../services/jarvisVoice';
+import { ebdAiTools, ToolCall } from '../services/jarvisTools';
 import { geminiService } from '../services/geminiService';
 import { Insumo, Product, Order, FichaTecnica, InvoiceScan, Tenant } from '../types';
 
@@ -59,7 +59,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const [isMinimized, setIsMinimized] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('main');
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [jarvisThinking, setJarvisThinking] = useState(false);
+  const [ebdAiThinking, setEbdAiThinking] = useState(false);
   const [toolHistory, setToolHistory] = useState<ToolCall[]>([]);
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>({
     rate: 1.1,
@@ -73,14 +73,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const historyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Update JARVIS state when data changes
+  // Update EBD AI state when data changes
   useEffect(() => {
-    jarvis.updateState({ insumos, products, orders, fichas, invoices, tenant });
+    ebdAi.updateState({ insumos, products, orders, fichas, invoices, tenant });
   }, [insumos, products, orders, fichas, invoices, tenant]);
 
   // Load tool history
   useEffect(() => {
-    setToolHistory(jarvisTools.getCallHistory(20));
+    setToolHistory(ebdAiTools.getCallHistory(20));
   }, [isProcessing]);
 
   // Set company ID for Gemini
@@ -115,12 +115,12 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     if (!text.trim()) return;
     
     setIsProcessing(true);
-    setJarvisThinking(true);
+    setEbdAiThinking(true);
     setResult(null);
 
     try {
       // Add user turn to context
-      jarvis.addTurn('user', text);
+      ebdAi.addTurn('user', text);
       
       // Try Gemini first, fallback to local tools
       let response;
@@ -135,12 +135,12 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         };
       } catch (geminiError) {
         console.log('Gemini unavailable, using local tools');
-        // Fallback to local JARVIS tools
-        response = await jarvisTools.processNaturalLanguage(text, activeTenantId);
+        // Fallback to local EBD AI tools
+        response = await ebdAiTools.processNaturalLanguage(text, activeTenantId);
       }
       
-      // Add JARVIS turn to context
-      jarvis.addTurn('jarvis', response.message);
+      // Add EBD AI turn to context
+      ebdAi.addTurn('ebdAi', response.message);
       
       // Save to history
       setHistory(prev => [
@@ -157,7 +157,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
       // Speak response
       if (soundEnabled) {
-        await jarvisVoice.speak(response.message);
+        await ebdAiVoice.speak(response.message);
       }
 
       // Refresh data if stock was modified
@@ -166,14 +166,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
       }
 
     } catch (err) {
-      console.error('JARVIS Error:', err);
+      console.error('EBD AI Error:', err);
       setResult({ success: false, message: 'Erro ao processar comando.' });
       if (soundEnabled) {
-        await jarvisVoice.speakError('Erro ao processar');
+        await ebdAiVoice.speakError('Erro ao processar');
       }
     } finally {
       setIsProcessing(false);
-      setJarvisThinking(false);
+      setEbdAiThinking(false);
       resetTranscript();
     }
   };
@@ -198,7 +198,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   };
 
   const clearMemory = () => {
-    jarvis.resetContext();
+    ebdAi.resetContext();
     setHistory([]);
     setResult(null);
   };
@@ -206,10 +206,10 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const toggleSound = async () => {
     const newState = !soundEnabled;
     setSoundEnabled(newState);
-    jarvisVoice.setEnabled(newState);
+    ebdAiVoice.setEnabled(newState);
     
     if (newState) {
-      await jarvisVoice.speak('Áudio ativado');
+      await ebdAiVoice.speak('Áudio ativado');
     }
   };
 
@@ -233,9 +233,9 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         )}
         
         {/* Context hint */}
-        {jarvis.getTopic() && (
+        {ebdAi.getTopic() && (
           <div className="max-w-xs p-2 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs shadow-lg">
-            💭 {jarvis.getTopic()}
+            💭 {ebdAi.getTopic()}
           </div>
         )}
         
@@ -261,12 +261,12 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 ${
               isListening 
                 ? 'bg-gradient-to-br from-red-500 via-red-600 to-red-700 shadow-red-500/40 animate-pulse' 
-                : jarvisThinking
+                : ebdAiThinking
                 ? 'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 shadow-blue-500/40'
                 : 'bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 shadow-orange-500/30 hover:scale-110'
             }`}
           >
-            {jarvisThinking ? (
+            {ebdAiThinking ? (
               <Brain className="w-7 h-7 text-white animate-spin" />
             ) : (
               <Zap className="w-7 h-7 text-white" />
@@ -305,9 +305,9 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                 <Zap className="w-5 h-5 text-black" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-white tracking-wider">J.A.R.V.I.S</h3>
+                <h3 className="text-sm font-black text-white tracking-wider">EBD AI</h3>
                 <p className="text-[10px] text-zinc-500">
-                  {jarvisThinking ? '🧠 Processando...' : 
+                  {ebdAiThinking ? '🧠 Processando...' : 
                    isListening ? '🔴 Ouvindo...' : 
                    isSpeaking ? '🔊 Falando...' : '⚡ Pronto'}
                 </p>
@@ -377,7 +377,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                   <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
                     <Brain className="w-10 h-10 text-amber-500" />
                   </div>
-                  <p className="text-zinc-400 text-sm mb-2">Olá! Sou o J.A.R.V.I.S</p>
+                  <p className="text-zinc-400 text-sm mb-2">Olá! Sou o EBD AI</p>
                   <p className="text-zinc-600 text-xs">Diga um comando ou clique no microfone</p>
                   
                   {/* Quick suggestions */}
@@ -410,7 +410,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     </div>
                   </div>
                   
-                  {/* JARVIS response */}
+                  {/* EBD AI response */}
                   <div className="flex justify-start">
                     <div className={`max-w-[85%] p-3 rounded-2xl rounded-bl-sm ${
                       item.success 
@@ -429,7 +429,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
               ))}
 
               {/* Thinking indicator */}
-              {jarvisThinking && (
+              {ebdAiThinking && (
                 <div className="flex justify-start">
                   <div className="p-3 rounded-2xl rounded-bl-sm bg-zinc-800/50 border border-zinc-700/50">
                     <div className="flex items-center gap-2">
@@ -502,7 +502,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         {viewMode === 'history' && (
           <div className="flex-1 overflow-y-auto p-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-white">Memória do JARVIS</h3>
+              <h3 className="text-sm font-bold text-white">Memória do EBD AI</h3>
               <button 
                 onClick={clearMemory}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs hover:bg-red-500/20"
@@ -513,7 +513,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             </div>
             
             <div className="space-y-2">
-              {jarvis.getRecentMemory(30).map((entry) => (
+              {ebdAi.getRecentMemory(30).map((entry) => (
                 <div 
                   key={entry.id} 
                   className={`p-3 rounded-lg border ${
@@ -539,7 +539,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                 </div>
               ))}
               
-              {jarvis.getRecentMemory(30).length === 0 && (
+              {ebdAi.getRecentMemory(30).length === 0 && (
                 <div className="text-center py-8">
                   <History className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
                   <p className="text-xs text-zinc-600">Nenhum registro ainda</p>
@@ -586,7 +586,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         {/* ============================================================ */}
         {viewMode === 'settings' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <h3 className="text-sm font-bold text-white mb-4">Configurações JARVIS</h3>
+            <h3 className="text-sm font-bold text-white mb-4">Configurações EBD AI</h3>
             
             {/* Voice settings */}
             <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
@@ -607,7 +607,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     onChange={(e) => {
                       const rate = parseFloat(e.target.value);
                       setVoiceConfig(prev => ({ ...prev, rate }));
-                      jarvisVoice.setRate(rate);
+                      ebdAiVoice.setRate(rate);
                     }}
                     className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
@@ -624,7 +624,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     onChange={(e) => {
                       const pitch = parseFloat(e.target.value);
                       setVoiceConfig(prev => ({ ...prev, pitch }));
-                      jarvisVoice.setPitch(pitch);
+                      ebdAiVoice.setPitch(pitch);
                     }}
                     className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
@@ -640,7 +640,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
               </h4>
               
               <div className="space-y-1">
-                {jarvisTools.getAvailableTools().map((tool) => (
+                {ebdAiTools.getAvailableTools().map((tool) => (
                   <div key={tool.name} className="p-2 rounded-lg bg-zinc-800/50">
                     <p className="text-[10px] font-mono text-amber-400">{tool.name}</p>
                     <p className="text-[9px] text-zinc-500">{tool.description}</p>
@@ -659,15 +659,15 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
               <div className="space-y-2 text-[10px]">
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Sessão:</span>
-                  <span className="text-zinc-300 font-mono">{jarvis.getRecentTurns(1).length > 0 ? 'Ativa' : 'Nova'}</span>
+                  <span className="text-zinc-300 font-mono">{ebdAi.getRecentTurns(1).length > 0 ? 'Ativa' : 'Nova'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Memórias:</span>
-                  <span className="text-zinc-300">{jarvis.getRecentMemory(100).length}</span>
+                  <span className="text-zinc-300">{ebdAi.getRecentMemory(100).length}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Último módulo:</span>
-                  <span className="text-zinc-300">{jarvis.getLastModule() || 'Nenhum'}</span>
+                  <span className="text-zinc-300">{ebdAi.getLastModule() || 'Nenhum'}</span>
                 </div>
               </div>
             </div>

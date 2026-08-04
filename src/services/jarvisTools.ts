@@ -1,10 +1,10 @@
-import { jarvis } from './jarvisCore';
-import { jarvisVoice } from './jarvisVoice';
+import { ebdAi } from './jarvisCore';
+import { ebdAiVoice } from './jarvisVoice';
 import { insumosService, productsService, ordersService } from '../lib/database';
 import { Insumo, Product, Order } from '../types';
 
 // ============================================================
-// JARVIS TOOL CALLING SYSTEM
+// EBD AI TOOL CALLING SYSTEM
 // ============================================================
 
 interface ToolCall {
@@ -66,7 +66,7 @@ const tools: Record<string, ToolDefinition> = {
         lastUpdated: new Date().toISOString().split('T')[0],
       });
 
-      jarvis.remember(
+      ebdAi.remember(
         `Adicionar ${args.quantity}${args.unit || 'un'} de ${insumo.name}`,
         `Estoque atualizado: ${insumo.currentStock} → ${newStock} ${insumo.unit}`,
         'success'
@@ -107,7 +107,7 @@ const tools: Record<string, ToolDefinition> = {
 
       const warning = newStock <= insumo.minStock ? ' ⚠️ Estoque abaixo do mínimo!' : '';
 
-      jarvis.remember(
+      ebdAi.remember(
         `Remover ${args.quantity}${args.unit || 'un'} de ${insumo.name}`,
         `Estoque atualizado: ${insumo.currentStock} → ${newStock} ${insumo.unit}${warning}`,
         'success'
@@ -140,7 +140,7 @@ const tools: Record<string, ToolDefinition> = {
       const status = insumo.currentStock <= insumo.minStock * 0.5 ? 'CRÍTICO' :
                      insumo.currentStock <= insumo.minStock ? 'BAIXO' : 'OK';
 
-      jarvis.setEntity('last_queried_item', insumo.name);
+      ebdAi.setEntity('last_queried_item', insumo.name);
 
       return {
         success: true,
@@ -170,12 +170,12 @@ const tools: Record<string, ToolDefinition> = {
         cost: args.cost || 0,
         margin: args.price > 0 ? ((args.price - (args.cost || 0)) / args.price) * 100 : 0,
         category: args.category || 'Geral',
-        description: 'Criado via JARVIS',
+        description: 'Criado via EBD AI',
         active: true,
         createdAt: new Date().toISOString(),
       } as any);
 
-      jarvis.remember(
+      ebdAi.remember(
         `Criar produto ${args.name} por R$${args.price}`,
         `Produto criado com sucesso`,
         'success'
@@ -208,7 +208,7 @@ const tools: Record<string, ToolDefinition> = {
       const lucro = product.price - product.cost;
       const margem = product.price > 0 ? ((lucro / product.price) * 100).toFixed(1) : '0';
 
-      jarvis.setEntity('last_queried_product', product.name);
+      ebdAi.setEntity('last_queried_product', product.name);
 
       return {
         success: true,
@@ -256,7 +256,7 @@ const tools: Record<string, ToolDefinition> = {
         createdAt: new Date().toISOString(),
       } as any);
 
-      jarvis.remember(
+      ebdAi.remember(
         `Pedido para ${args.customer}: ${quantity}x ${product.name}`,
         `Pedido criado: R$ ${total.toFixed(2)}`,
         'success'
@@ -284,9 +284,9 @@ const tools: Record<string, ToolDefinition> = {
       const products = await productsService.getAll(tenantId);
       const orders = await ordersService.getAll(tenantId);
       
-      jarvis.updateState({ insumos, products, orders });
-      const summary = jarvis.calculateFinancialSummary();
-      const alerts = jarvis.analyzeStockAlerts();
+      ebdAi.updateState({ insumos, products, orders });
+      const summary = ebdAi.calculateFinancialSummary();
+      const alerts = ebdAi.analyzeStockAlerts();
       
       const criticalAlerts = alerts.filter(a => a.level === 'critical');
       const lowAlerts = alerts.filter(a => a.level === 'low');
@@ -339,7 +339,7 @@ const tools: Record<string, ToolDefinition> = {
       };
 
       const target = modules[args.module.toLowerCase()] || args.module;
-      jarvis.setLastModule(target);
+      ebdAi.setLastModule(target);
 
       return {
         success: true,
@@ -357,7 +357,7 @@ const tools: Record<string, ToolDefinition> = {
     description: 'Obter ajuda',
     parameters: {},
     handler: async () => {
-      const helpText = `🧠 JARVIS - Comandos disponíveis:
+      const helpText = `🧠 EBD AI - Comandos disponíveis:
 
 📦 ESTOQUE:
 • "Quanto tenho de X?" - Consultar estoque
@@ -393,10 +393,10 @@ const tools: Record<string, ToolDefinition> = {
 
   clear_memory: {
     name: 'clear_memory',
-    description: 'Limpar memória do JARVIS',
+    description: 'Limpar memória do EBD AI',
     parameters: {},
     handler: async () => {
-      jarvis.resetContext();
+      ebdAi.resetContext();
       return {
         success: true,
         message: 'Memória limpa. Começando uma nova sessão.',
@@ -409,20 +409,20 @@ const tools: Record<string, ToolDefinition> = {
 // TOOL CALLING ENGINE
 // ============================================================
 
-class JarvisToolCalling {
-  private static instance: JarvisToolCalling;
+class EbdAiToolCalling {
+  private static instance: EbdAiToolCalling;
   private callHistory: ToolCall[] = [];
-  private storageKey = 'jarvis_tool_history';
+  private storageKey = 'ebdAi_tool_history';
 
   private constructor() {
     this.loadHistory();
   }
 
-  static getInstance(): JarvisToolCalling {
-    if (!JarvisToolCalling.instance) {
-      JarvisToolCalling.instance = new JarvisToolCalling();
+  static getInstance(): EbdAiToolCalling {
+    if (!EbdAiToolCalling.instance) {
+      EbdAiToolCalling.instance = new EbdAiToolCalling();
     }
-    return JarvisToolCalling.instance;
+    return EbdAiToolCalling.instance;
   }
 
   private loadHistory(): void {
@@ -491,8 +491,8 @@ class JarvisToolCalling {
     try {
       const result = await tool.handler(args, tenantId);
       
-      jarvis.setLastAction(toolName);
-      jarvis.trackCommand(toolName);
+      ebdAi.setLastAction(toolName);
+      ebdAi.trackCommand(toolName);
       
       return result;
     } catch (error) {
@@ -567,5 +567,5 @@ class JarvisToolCalling {
   }
 }
 
-export const jarvisTools = JarvisToolCalling.getInstance();
+export const ebdAiTools = EbdAiToolCalling.getInstance();
 export type { ToolCall, ToolResult, ToolDefinition };

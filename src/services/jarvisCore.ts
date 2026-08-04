@@ -1,7 +1,7 @@
 import { Insumo, Product, Order, FichaTecnica, InvoiceScan, Tenant } from '../types';
 
 // ============================================================
-// JARVIS CORE ENGINE - Persistent Memory + Context
+// EBD AI CORE ENGINE - Persistent Memory + Context
 // ============================================================
 
 interface MemoryEntry {
@@ -15,7 +15,7 @@ interface MemoryEntry {
 
 interface ConversationContext {
   sessionId: string;
-  turns: Array<{ role: 'user' | 'jarvis'; content: string; timestamp: number }>;
+  turns: Array<{ role: 'user' | 'ebdAi'; content: string; timestamp: number }>;
   topic: string | null;
   entities: Map<string, string>;
   preferences: Record<string, any>;
@@ -42,14 +42,14 @@ interface SystemState {
 }
 
 // Singleton class
-class JarvisCore {
-  private static instance: JarvisCore;
+class EbdAiCore {
+  private static instance: EbdAiCore;
   private memory: MemoryEntry[] = [];
   private context: ConversationContext;
   private profile: UserProfile;
-  private storageKey = 'jarvis_memory';
-  private profileKey = 'jarvis_profile';
-  private contextKey = 'jarvis_context';
+  private storageKey = 'ebdAi_memory';
+  private profileKey = 'ebdAi_profile';
+  private contextKey = 'ebdAi_context';
 
   private constructor() {
     this.context = this.loadContext();
@@ -57,11 +57,11 @@ class JarvisCore {
     this.memory = this.loadMemory();
   }
 
-  static getInstance(): JarvisCore {
-    if (!JarvisCore.instance) {
-      JarvisCore.instance = new JarvisCore();
+  static getInstance(): EbdAiCore {
+    if (!EbdAiCore.instance) {
+      EbdAiCore.instance = new EbdAiCore();
     }
-    return JarvisCore.instance;
+    return EbdAiCore.instance;
   }
 
   // ============================================================
@@ -156,7 +156,7 @@ class JarvisCore {
     }
   }
 
-  addTurn(role: 'user' | 'jarvis', content: string): void {
+  addTurn(role: 'user' | 'ebdAi', content: string): void {
     this.context.turns.push({ role, content, timestamp: Date.now() });
     // Keep last 20 turns
     if (this.context.turns.length > 20) {
@@ -432,5 +432,5 @@ class JarvisCore {
   }
 }
 
-export const jarvis = JarvisCore.getInstance();
+export const ebdAi = EbdAiCore.getInstance();
 export type { MemoryEntry, ConversationContext, UserProfile, SystemState };

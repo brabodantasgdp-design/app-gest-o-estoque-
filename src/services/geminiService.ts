@@ -1,4 +1,4 @@
-import { jarvis } from './jarvisCore';
+import { ebdAi } from './jarvisCore';
 
 // ============================================================
 // GEMINI INTEGRATION SERVICE
@@ -17,7 +17,7 @@ interface GeminiResponse {
     name: string;
     args: Record<string, any>;
   }>;
-  source: 'gemini_ai' | 'local_jarvis';
+  source: 'gemini_ai' | 'local_ebdAi';
   model?: string;
   timestamp: string;
 }
@@ -36,7 +36,7 @@ class GeminiService {
   private conversationHistory: ChatMessage[] = [];
   private companyId: string = 'default';
   private isGeminiAvailable: boolean | null = null;
-  private storageKey = 'jarvis_gemini_history';
+  private storageKey = 'ebdAi_gemini_history';
 
   private constructor() {
     this.loadHistory();
@@ -91,7 +91,7 @@ class GeminiService {
     });
 
     try {
-      const response = await fetch('/api/jarvis', {
+      const response = await fetch('/api/ebdAi', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -118,10 +118,10 @@ class GeminiService {
 
       this.saveHistory();
       
-      // Track in JARVIS memory
-      jarvis.remember(message, data.response, data.success ? 'success' : 'error');
-      jarvis.addTurn('user', message);
-      jarvis.addTurn('jarvis', data.response);
+      // Track in EBD AI memory
+      ebdAi.remember(message, data.response, data.success ? 'success' : 'error');
+      ebdAi.addTurn('user', message);
+      ebdAi.addTurn('ebdAi', data.response);
 
       // Check if Gemini is available
       this.isGeminiAvailable = data.source === 'gemini_ai';
@@ -149,18 +149,18 @@ class GeminiService {
 
     // Smart local responses
     if (lower.includes('olá') || lower.includes('oi') || lower.includes('bom dia') || lower.includes('boa tarde') || lower.includes('boa noite')) {
-      response = jarvis.getContextualGreeting();
+      response = ebdAi.getContextualGreeting();
     } else if (lower.includes('estoque') || lower.includes('insumo')) {
-      const summary = jarvis.calculateFinancialSummary();
-      response = `📊 Resumo do Estoque:\n• Total de itens: ${jarvis.getState().insumos.length}\n• Valor total: R$ ${summary.totalStockValue.toFixed(2)}\n\nPara detalhes, acesse o módulo de Insumos.`;
+      const summary = ebdAi.calculateFinancialSummary();
+      response = `📊 Resumo do Estoque:\n• Total de itens: ${ebdAi.getState().insumos.length}\n• Valor total: R$ ${summary.totalStockValue.toFixed(2)}\n\nPara detalhes, acesse o módulo de Insumos.`;
     } else if (lower.includes('venda') || lower.includes('faturamento')) {
-      const summary = jarvis.calculateFinancialSummary();
-      response = `💰 Resumo de Vendas:\n• Total de pedidos: ${jarvis.getState().orders.length}\n• Faturamento: R$ ${summary.totalRevenue.toFixed(2)}\n• Ticket médio: R$ ${summary.totalRevenue / Math.max(1, jarvis.getState().orders.length)}.toFixed(2)`;
+      const summary = ebdAi.calculateFinancialSummary();
+      response = `💰 Resumo de Vendas:\n• Total de pedidos: ${ebdAi.getState().orders.length}\n• Faturamento: R$ ${summary.totalRevenue.toFixed(2)}\n• Ticket médio: R$ ${summary.totalRevenue / Math.max(1, ebdAi.getState().orders.length)}.toFixed(2)`;
     } else if (lower.includes('lucro') || lower.includes('margem')) {
-      const summary = jarvis.calculateFinancialSummary();
+      const summary = ebdAi.calculateFinancialSummary();
       response = `📈 Análise de Lucro:\n• Margem média: ${summary.averageMargin.toFixed(1)}%\n• Top produto: ${summary.topProducts[0]?.name || 'N/A'}`;
     } else if (lower.includes('ajuda') || lower.includes('help')) {
-      response = `🧠 JARVIS - Comandos:
+      response = `🧠 EBD AI - Comandos:
 
 📦 ESTOQUE: "Quanto tenho de X?", "Estoque baixo"
 🏷️ PRODUTOS: "Quanto custa X?", "Criar produto"
@@ -168,13 +168,13 @@ class GeminiService {
 📊 RELATÓRIOS: "Resumo", "Relatório de vendas"
 💡 DICAS: Fale naturalmente`;
     } else {
-      response = `Entendi: "${message}"\n\nSou a JARVIS do RetailPro. Posso ajudar com estoque, produtos, pedidos e relatórios. O que deseja?`;
+      response = `Entendi: "${message}"\n\nSou a EBD AI do RetailPro. Posso ajudar com estoque, produtos, pedidos e relatórios. O que deseja?`;
     }
 
     const result: GeminiResponse = {
       success: true,
       response,
-      source: 'local_jarvis',
+      source: 'local_ebdAi',
       timestamp: new Date().toISOString(),
     };
 
@@ -195,7 +195,7 @@ class GeminiService {
 
   async processVoiceCommand(command: string, context?: Record<string, any>): Promise<VoiceResponse> {
     try {
-      const response = await fetch('/api/jarvis/voice', {
+      const response = await fetch('/api/ebdAi/voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -211,10 +211,10 @@ class GeminiService {
 
       const data: VoiceResponse = await response.json();
       
-      // Track in JARVIS memory
-      jarvis.remember(command, data.message, data.success ? 'success' : 'error');
-      jarvis.addTurn('user', command);
-      jarvis.addTurn('jarvis', data.message);
+      // Track in EBD AI memory
+      ebdAi.remember(command, data.message, data.success ? 'success' : 'error');
+      ebdAi.addTurn('user', command);
+      ebdAi.addTurn('ebdAi', data.message);
 
       return data;
 
@@ -268,8 +268,8 @@ class GeminiService {
     // This would integrate with the actual services
     console.log('Executing function call:', name, args);
     
-    jarvis.setLastAction(`gemini_${name}`);
-    jarvis.trackCommand(`gemini_${name}`);
+    ebdAi.setLastAction(`gemini_${name}`);
+    ebdAi.trackCommand(`gemini_${name}`);
   }
 
   // ============================================================

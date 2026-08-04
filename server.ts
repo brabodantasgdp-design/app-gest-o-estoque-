@@ -529,8 +529,8 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
     }
   });
 
-  // API Route: JARVIS AI Chat with Tool Calling
-  app.post("/api/jarvis", async (req, res) => {
+  // API Route: EBD AI Chat with Tool Calling
+  app.post("/api/ebdAi", async (req, res) => {
     try {
       const { messages, companyId, tools: requestedTools } = req.body;
 
@@ -541,7 +541,7 @@ Sua tarefa é analisar a imagem/documento da nota fiscal e extrair com precisão
       const apiKey = process.env.GEMINI_API_KEY;
       
       // Build context from company data
-      let systemContext = `Você é a JARVIS, a inteligência artificial de alta performance do sistema RetailPro/EBD.
+      let systemContext = `Você é a EBD AI, a inteligência artificial de alta performance do sistema RetailPro/EBD.
 Seu tom é direto, extremamente profissional, sofisticado, conciso e leal ao operador.
 Responda sempre em português do Brasil de forma assertiva e sem rodeios.
 Você tem acesso total aos dados de insumos, fichas técnicas e vendas da empresa ID: ${companyId || 'default'}.
@@ -549,7 +549,7 @@ Seja preciso nos cálculos e análises. Use dados reais quando disponíveis.`;
 
       // If no API key, use local processing
       if (!apiKey) {
-        console.warn("GEMINI_API_KEY missing, using local JARVIS processing");
+        console.warn("GEMINI_API_KEY missing, using local EBD AI processing");
         
         const lastMessage = messages[messages.length - 1]?.content || '';
         const lower = lastMessage.toLowerCase();
@@ -564,7 +564,7 @@ Seja preciso nos cálculos e análises. Use dados reais quando disponíveis.`;
         } else if (lower.includes('preço') || lower.includes('custo')) {
           response = "🏷️ Para consulta de preços, acesse o módulo de Produtos. Posso comparar preços e calcular margens de lucro.";
         } else if (lower.includes('ajuda') || lower.includes('help')) {
-          response = `🧠 JARVIS - Comandos disponíveis:
+          response = `🧠 EBD AI - Comandos disponíveis:
 
 📦 ESTOQUE: "Quanto tenho de X?", "Estoque baixo", "Adicionar 5kg de X"
 🏷️ PRODUTOS: "Quanto custa X?", "Criar produto X por 50"
@@ -574,7 +574,7 @@ Seja preciso nos cálculos e análises. Use dados reais quando disponíveis.`;
         } else {
           response = `Entendi: "${lastMessage}". 
 
-Sou a JARVIS do RetailPro. Posso ajudar com:
+Sou a EBD AI do RetailPro. Posso ajudar com:
 • 📦 Consulta e gestão de estoque
 • 🏷️ Preços e margens de produtos
 • 🛋️ Criação e gestão de pedidos
@@ -587,7 +587,7 @@ O que deseja fazer?`;
         return res.json({
           success: true,
           response,
-          source: 'local_jarvis',
+          source: 'local_ebdAi',
           timestamp: new Date().toISOString(),
         });
       }
@@ -689,17 +689,17 @@ O que deseja fazer?`;
       });
 
     } catch (error: any) {
-      console.error("JARVIS API Error:", error);
+      console.error("EBD AI API Error:", error);
       return res.status(500).json({
         success: false,
-        error: error.message || "Failed to process JARVIS request",
+        error: error.message || "Failed to process EBD AI request",
         response: "Desculpe, ocorreu um erro ao processar sua solicitação. Tente novamente.",
       });
     }
   });
 
-  // API Route: JARVIS Voice - Process voice command and execute
-  app.post("/api/jarvis/voice", async (req, res) => {
+  // API Route: EBD AI Voice - Process voice command and execute
+  app.post("/api/ebdAi/voice", async (req, res) => {
     try {
       const { command, companyId, context } = req.body;
 
@@ -749,7 +749,7 @@ Contexto do sistema: ${JSON.stringify(context || {})}`;
         model: "gemini-2.5-flash",
         contents: [{ role: 'user', parts: [{ text: fullContext }] }],
         config: {
-          systemInstruction: `Você é a JARVIS processando comandos de voz.
+          systemInstruction: `Você é a EBD AI processando comandos de voz.
 Analise o comando e retorne JSON com:
 - action: ação a executar (query_stock, add_stock, create_product, create_order, navigate, chat)
 - params: parâmetros da ação
@@ -782,7 +782,7 @@ Analise o comando e retorne JSON com:
       });
 
     } catch (error: any) {
-      console.error("JARVIS Voice Error:", error);
+      console.error("EBD AI Voice Error:", error);
       return res.status(500).json({
         success: false,
         action: 'error',

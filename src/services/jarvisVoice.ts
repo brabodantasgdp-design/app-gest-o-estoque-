@@ -1,7 +1,7 @@
-import { jarvis } from './jarvisCore';
+import { ebdAi } from './jarvisCore';
 
 // ============================================================
-// JARVIS VOICE SERVICE - Context-Aware TTS + STT
+// EBD AI VOICE SERVICE - Context-Aware TTS + STT
 // ============================================================
 
 interface VoiceConfig {
@@ -12,14 +12,14 @@ interface VoiceConfig {
   enabled: boolean;
 }
 
-class JarvisVoice {
-  private static instance: JarvisVoice;
+class EbdAiVoice {
+  private static instance: EbdAiVoice;
   private config: VoiceConfig;
   private synth: SpeechSynthesis;
   private voices: SpeechSynthesisVoice[] = [];
   private isSpeaking = false;
   private queue: string[] = [];
-  private configKey = 'jarvis_voice_config';
+  private configKey = 'ebdAi_voice_config';
 
   private constructor() {
     this.synth = window.speechSynthesis;
@@ -30,11 +30,11 @@ class JarvisVoice {
     this.synth.onvoiceschanged = () => this.loadVoices();
   }
 
-  static getInstance(): JarvisVoice {
-    if (!JarvisVoice.instance) {
-      JarvisVoice.instance = new JarvisVoice();
+  static getInstance(): EbdAiVoice {
+    if (!EbdAiVoice.instance) {
+      EbdAiVoice.instance = new EbdAiVoice();
     }
-    return JarvisVoice.instance;
+    return EbdAiVoice.instance;
   }
 
   private loadConfig(): VoiceConfig {
@@ -238,7 +238,7 @@ class JarvisVoice {
   }
 
   async speakGreeting(): Promise<void> {
-    const greeting = jarvis.getContextualGreeting();
+    const greeting = ebdAi.getContextualGreeting();
     await this.speak(greeting);
   }
 
@@ -254,5 +254,5 @@ class JarvisVoice {
   }
 }
 
-export const jarvisVoice = JarvisVoice.getInstance();
+export const ebdAiVoice = EbdAiVoice.getInstance();
 export type { VoiceConfig };
