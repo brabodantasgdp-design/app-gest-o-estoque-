@@ -256,5 +256,45 @@ Analise o comando e retorne JSON com:
     }
   });
 
+  // Proxy endpoint for client-side voice agent (bypass CORS)
+  router.post("/agent", async (req: Request, res: Response) => {
+    try {
+      const { contents, systemInstruction, tools, config: clientConfig } = req.body;
+
+      if (!contents || !Array.isArray(contents)) {
+        return res.status(400).json({ error: "contents array is required" });
+      }
+
+      const apiKey = GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "GEMINI_API_KEY not configured" });
+      }
+
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents,
+        config: {
+          systemInstruction: systemInstruction || undefined,
+          tools: tools || undefined,
+          temperature: clientConfig?.temperature ?? 0.7,
+          maxOutputTokens: clientConfig?.maxOutputTokens ?? 512,
+        },
+      });
+
+      const candidates = response.candidates || [];
+      const parts = candidates[0]?.content?.parts || [];
+      const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join("");
+      const functionCalls = parts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall);
+
+      return res.json({ success: true, text, functionCalls });
+    } catch (error: any) {
+      console.error("Agent proxy error:", error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   return router;
 }

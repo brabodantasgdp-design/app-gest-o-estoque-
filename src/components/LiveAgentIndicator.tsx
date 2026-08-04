@@ -1,14 +1,12 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { createLiveAgent, type LiveAgent, type LiveAgentState, type SupabaseContext } from "../services/liveAgent";
 import { insumosService, productsService } from "../lib/database";
-import { Mic, MicOff, Loader2, Volume2 } from "lucide-react";
+import { Mic, Loader2, Volume2 } from "lucide-react";
 
 interface Props {
   tenantId: string | null;
   onRefresh: () => void;
 }
-
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => {
   const agentRef = useRef<LiveAgent | null>(null);
@@ -39,15 +37,15 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
 
   // Init once
   useEffect(() => {
-    if (startedRef.current || !tenantId || !GEMINI_KEY) return;
+    if (startedRef.current || !tenantId) return;
     startedRef.current = true;
     const ctx = buildContext();
     if (!ctx) return;
-    const agent = createLiveAgent({ apiKey: GEMINI_KEY, context: ctx, onState: setState });
+    const agent = createLiveAgent({ context: ctx, onState: setState });
     agentRef.current = agent;
     agent.start();
     return () => { agent.stop(); startedRef.current = false; };
-  }, [tenantId, GEMINI_KEY]);
+  }, [tenantId]);
 
   useEffect(() => {
     if (!startedRef.current) return;

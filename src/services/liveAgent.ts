@@ -1,4 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { z } from "zod";
 
 // ============================================================
@@ -21,15 +20,20 @@ const ProductCreateSchema = z.object({ name: z.string().min(2), price: z.number(
 // TOOLS
 // ============================================================
 
+const OBJ = "OBJECT" as const;
+const STR = "STRING" as const;
+const NUM = "NUMBER" as const;
+const BOOL = "BOOLEAN" as const;
+
 const TOOLS = [{
   functionDeclarations: [
-    { name: "inventory_query", description: "Consultar estoque. Use para: quanto tem de X, estoque de Y, lista de insumos.", parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING } } } },
-    { name: "inventory_register", description: "Cadastrar insumo novo. Use para: cadastrar, criar, registrar.", parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, quantity: { type: Type.NUMBER }, unit: { type: Type.STRING }, unitCost: { type: Type.NUMBER }, supplier: { type: Type.STRING }, category: { type: Type.STRING } }, required: ["name", "quantity", "unit"] } },
-    { name: "inventory_add", description: "Adicionar estoque. Use para: entrou, chegou, recebeu, adicionou.", parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING }, quantity: { type: Type.NUMBER } }, required: ["item_name", "quantity"] } },
-    { name: "inventory_remove", description: "Remover estoque. Use para: usou, gastou, removeu, consumiu.", parameters: { type: Type.OBJECT, properties: { item_name: { type: Type.STRING }, quantity: { type: Type.NUMBER } }, required: ["item_name", "quantity"] } },
-    { name: "inventory_alert", description: "Verificar alertas de estoque baixo/crítico/zerado.", parameters: { type: Type.OBJECT, properties: {} } },
-    { name: "report_summary", description: "Relatório rápido do negócio. Use para: resumo, como tá o negócio.", parameters: { type: Type.OBJECT, properties: { type: { type: Type.STRING } } } },
-    { name: "product_create", description: "Criar produto novo. Use para: criar produto, cadastrar item.", parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, price: { type: Type.NUMBER }, category: { type: Type.STRING } }, required: ["name", "price"] } },
+    { name: "inventory_query", description: "Consultar estoque. Use para: quanto tem de X, estoque de Y, lista de insumos.", parameters: { type: OBJ, properties: { item_name: { type: STR } } } },
+    { name: "inventory_register", description: "Cadastrar insumo novo. Use para: cadastrar, criar, registrar.", parameters: { type: OBJ, properties: { name: { type: STR }, quantity: { type: NUM }, unit: { type: STR }, unitCost: { type: NUM }, supplier: { type: STR }, category: { type: STR } }, required: ["name", "quantity", "unit"] } },
+    { name: "inventory_add", description: "Adicionar estoque. Use para: entrou, chegou, recebeu, adicionou.", parameters: { type: OBJ, properties: { item_name: { type: STR }, quantity: { type: NUM } }, required: ["item_name", "quantity"] } },
+    { name: "inventory_remove", description: "Remover estoque. Use para: usou, gastou, removeu, consumiu.", parameters: { type: OBJ, properties: { item_name: { type: STR }, quantity: { type: NUM } }, required: ["item_name", "quantity"] } },
+    { name: "inventory_alert", description: "Verificar alertas de estoque baixo/crítico/zerado.", parameters: { type: OBJ, properties: {} } },
+    { name: "report_summary", description: "Relatório rápido do negócio. Use para: resumo, como tá o negócio.", parameters: { type: OBJ, properties: { type: { type: STR } } } },
+    { name: "product_create", description: "Criar produto novo. Use para: criar produto, cadastrar item.", parameters: { type: OBJ, properties: { name: { type: STR }, price: { type: NUM }, category: { type: STR } }, required: ["name", "price"] } },
   ],
 }];
 
@@ -67,7 +71,6 @@ export interface SupabaseContext {
 }
 
 export interface LiveAgentConfig {
-  apiKey: string;
   context?: SupabaseContext;
   onState: LiveAgentCallback;
   proactiveInterval?: number;
@@ -79,7 +82,6 @@ export interface LiveAgentConfig {
 
 export class LiveAgent {
   private config: LiveAgentConfig;
-  private ai: GoogleGenAI;
   private recognition: any = null;
   private ctx: SupabaseContext | null = null;
   private proactiveTimer: ReturnType<typeof setInterval> | null = null;
@@ -92,7 +94,6 @@ export class LiveAgent {
   constructor(config: LiveAgentConfig) {
     this.config = config;
     this.proactiveInterval = config.proactiveInterval || 120000;
-    this.ai = new GoogleGenAI({ apiKey: config.apiKey });
     this.setupRecognition();
     if (config.context) this.setContext(config.context);
   }
@@ -172,29 +173,23 @@ export class LiveAgent {
 
   private async processVoice(text: string) {
     try {
-      const response = await this.ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [{ role: "user", parts: [{ text }] }],
-        config: {
+      // Round 1: Send user text to server, get Gemini response + function calls
+      const res1 = await fetch("/api/ebdAi/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text }] }],
           systemInstruction: SYSTEM_PROMPT,
-          tools: TOOLS as any,
-          temperature: 0.7,
-          maxOutputTokens: 300,
-        },
+          tools: TOOLS,
+        }),
       });
+      if (!res1.ok) throw new Error(`Server error: ${res1.status}`);
+      const data1 = await res1.json();
 
-      const parts = response.candidates?.[0]?.content?.parts;
-      if (!parts) { this.speak("Desculpe, não entendi."); return; }
+      let responseText = data1.text || "";
+      const functionCalls: any[] = data1.functionCalls || [];
 
-      let responseText = "";
-      let functionCalls: any[] = [];
-
-      for (const part of parts) {
-        if (part.text) responseText += part.text;
-        if (part.functionCall) functionCalls.push(part.functionCall);
-      }
-
-      // Execute function calls
+      // Execute function calls against Supabase
       const results: any[] = [];
       for (const fc of functionCalls) {
         try {
@@ -206,31 +201,25 @@ export class LiveAgent {
         }
       }
 
-      // If there were function calls, send results back to Gemini for final response
+      // Round 2: Send function results back to Gemini for final spoken response
       if (results.length > 0) {
-        const followUp = await this.ai.models.generateContent({
-          model: "gemini-2.0-flash",
-          contents: [
-            { role: "user", parts: [{ text }] },
-            { role: "model", parts: functionCalls.map((fc: any) => ({ functionCall: fc })) },
-            { role: "user", parts: results.map((r: any) => ({
-              functionResponse: { name: r.name, response: r.error ? { error: r.error } : { result: r.result } },
-            })) },
-          ],
-          config: {
+        const res2 = await fetch("/api/ebdAi/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              { role: "user", parts: [{ text }] },
+              ...functionCalls.map((fc: any) => ({ role: "model", parts: [{ functionCall: fc }] })),
+              { role: "user", parts: results.map((r: any) => ({
+                functionResponse: { name: r.name, response: r.error ? { error: r.error } : { result: r.result } },
+              })) },
+            ],
             systemInstruction: SYSTEM_PROMPT,
-            temperature: 0.7,
-            maxOutputTokens: 300,
-          },
+          }),
         });
-
-        const finalText = followUp.candidates?.[0]?.content?.parts
-          ?.filter((p: any) => p.text)
-          ?.map((p: any) => p.text)
-          ?.join("") || "";
-
-        if (finalText) {
-          responseText = finalText;
+        if (res2.ok) {
+          const data2 = await res2.json();
+          responseText = data2.text || this.formatResult(results);
         } else {
           responseText = this.formatResult(results);
         }
