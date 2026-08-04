@@ -37,16 +37,18 @@ export const authService = {
   async login(email: string, password: string) {
     if (!isConfigured) {
       if (email === 'brabo.dantas.gdp@gmail.com' && password === '87849244') {
+        const userData = {
+          id: 'usr-superadmin',
+          name: 'Brabo Dantas',
+          email: email,
+          role: 'super_admin' as const,
+          tenantId: undefined,
+          tenantName: 'Painel Global SaaS',
+        };
+        localStorage.setItem('ebd_current_user', JSON.stringify(userData));
         return {
           success: true,
-          user: {
-            id: 'usr-superadmin',
-            name: 'Brabo Dantas',
-            email: email,
-            role: 'super_admin' as const,
-            tenantId: undefined,
-            tenantName: 'Painel Global SaaS',
-          }
+          user: userData
         };
       }
       return { success: false, message: 'Supabase nao configurado. Use credenciais do super admin.' };
@@ -96,16 +98,18 @@ export const authService = {
         }
 
         if (user && tenant) {
+          const userData = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            tenantId: tenant.id,
+            tenantName: 'Loja Principal',
+          };
+          localStorage.setItem('ebd_current_user', JSON.stringify(userData));
           return {
             success: true,
-            user: {
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              role: user.role,
-              tenantId: tenant.id,
-              tenantName: 'Loja Principal',
-            }
+            user: userData
           };
         }
 
@@ -134,16 +138,18 @@ export const authService = {
         tenantName = tenant?.name || '';
       }
 
+      const userData = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        tenantId: user.tenant_id,
+        tenantName,
+      };
+      localStorage.setItem('ebd_current_user', JSON.stringify(userData));
       return {
         success: true,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          tenantId: user.tenant_id,
-          tenantName,
-        }
+        user: userData
       };
     } catch (err) {
       console.error('Login error:', err);
@@ -152,11 +158,21 @@ export const authService = {
   },
 
   async logout() {
+    localStorage.removeItem('ebd_current_user');
     if (!isConfigured) return;
     try { await supabase.auth.signOut(); } catch (_) {}
   },
 
   async getCurrentUser() {
+    // Try localStorage first (session persistence without Supabase Auth)
+    try {
+      const stored = localStorage.getItem('ebd_current_user');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (_) {}
+
+    // Try Supabase Auth if configured
     if (!isConfigured) return null;
     try {
       const { data: { user } } = await supabase.auth.getUser();
