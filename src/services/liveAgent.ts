@@ -455,11 +455,17 @@ export class LiveAgent {
       this.memory = new MemoryStore(this.config.context.tenantId);
     }
 
+    if (this.reconnectAttempts > 5) {
+      this.update({ status: "error", error: "Falha ao conectar após várias tentativas. Recarregue a página." });
+      return;
+    }
+
     this.update({ status: "connecting" });
-    this.reconnectAttempts = 0;
 
     try {
-      await this.openMicrophone();
+      if (!this.mediaStream) {
+        await this.openMicrophone();
+      }
       await this.connectLive();
       this.startProactiveMonitoring();
     } catch (err: any) {

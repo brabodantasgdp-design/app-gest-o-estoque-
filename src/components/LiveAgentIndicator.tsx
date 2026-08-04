@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import { createLiveAgent, type LiveAgent, type LiveAgentState, type SupabaseContext } from "../services/liveAgent";
 import { insumosService, productsService } from "../lib/database";
 
@@ -25,6 +25,7 @@ const STATUS_COLORS: Record<string, { dot: string; bg: string; border: string }>
 
 export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => {
   const agentRef = useRef<LiveAgent | null>(null);
+  const startedRef = useRef(false);
   const [state, setState] = React.useState<LiveAgentState>({
     status: "disconnected", listening: false, lastSpeech: "", lastAction: "",
     lastResponse: "", error: null, proactiveAlert: null, memoryCount: 0,
@@ -50,9 +51,12 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
     };
   }, [tenantId]);
 
-  // Initialize agent
+  // Initialize agent once
   useEffect(() => {
+    if (startedRef.current) return;
     if (!tenantId || !GEMINI_KEY) return;
+
+    startedRef.current = true;
     const ctx = buildContext();
     if (!ctx) return;
 
@@ -60,8 +64,20 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
     agentRef.current = agent;
     agent.start();
 
-    return () => agent.stop();
-  }, [tenantId === null ? "_null" : tenantId]);
+    return () => {
+      agent.stop();
+      startedRef.current = false;
+    };
+  }, [tenantId, GEMINI_KEY]);
+
+  // Update context when tenant changes
+  useEffect(() => {
+    if (!startedRef.current) return;
+    const ctx = buildContext();
+    if (ctx && agentRef.current) {
+      agentRef.current.setContext(ctx);
+    }
+  }, [tenantId]);
 
   // Show proactive alert with auto-dismiss
   useEffect(() => {
