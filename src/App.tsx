@@ -23,14 +23,7 @@ import { TrendingUp, DollarSign, PieChart, ShieldCheck, Database, Cpu, LogOut, U
 
 export default function App() {
   // Auth state
-  const [currentUser, setCurrentUser] = useState<User | null>({
-    id: 'usr-tenant-1',
-    name: 'Alexandre Silva',
-    email: 'alexandre@padariagourmet.com.br',
-    role: 'store_owner',
-    tenantId: 'tenant-1',
-    tenantName: 'Padaria & Confeitaria Artesanal Gourmet',
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currency, setCurrency] = useState<CurrencyType>('BRL');
