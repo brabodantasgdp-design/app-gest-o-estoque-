@@ -198,103 +198,102 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
   };
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="space-y-4 lg:space-y-6 pb-12 animate-in fade-in duration-300">
       
       {/* Header & Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-800/50">
+      <div className="flex flex-col gap-4 pb-2 border-b border-zinc-800/50">
         <div>
-          <h1 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            Módulo de Insumos & Matérias-Primas
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              Controle em g / ml / un
+          <h1 className="text-lg lg:text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+            <span className="truncate">Insumos & Matérias-Primas</span>
+            <span className="text-[10px] lg:text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex-shrink-0">
+              g / ml / un
             </span>
           </h1>
-          <p className="text-xs text-zinc-400 mt-1">
-            Gestão precisa de estoques fracionados e controle de custo unitário base para precificação.
+          <p className="text-[11px] lg:text-xs text-zinc-400 mt-1">
+            Controle de estoques e custo unitário.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsVoiceAssistantOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-extrabold text-xs shadow-lg shadow-purple-500/20 transition-all active:scale-95"
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-extrabold text-xs shadow-lg shadow-purple-500/20 transition-all active:scale-95"
           >
             <Mic className="w-4 h-4" />
-            Assistente de Voz
+            <span className="hidden sm:inline">Assistente de Voz</span>
+            <span className="sm:hidden">Voz</span>
           </button>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-extrabold text-xs shadow-lg shadow-orange-500/20 transition-all active:scale-95"
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-extrabold text-xs shadow-lg shadow-orange-500/20 transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            Novo Insumo
+            <span className="hidden sm:inline">Novo Insumo</span>
+            <span className="sm:hidden">Novo</span>
           </button>
         </div>
       </div>
 
       {/* Stats Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
-          <div className="text-xs text-zinc-400">Total de Insumos</div>
-          <div className="text-2xl font-black text-white mt-1">{insumos.length}</div>
-          <div className="text-[10px] text-zinc-500 mt-1">Matérias-primas cadastradas</div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+        <div className="p-3 lg:p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
+          <div className="text-[10px] lg:text-xs text-zinc-400">Total</div>
+          <div className="text-xl lg:text-2xl font-black text-white mt-1">{insumos.length}</div>
+          <div className="text-[9px] lg:text-[10px] text-zinc-500 mt-1">insumos</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
-          <div className="text-xs text-zinc-400">Alertas de Reabastecimento</div>
-          <div className="text-2xl font-black text-amber-400 mt-1">
+        <div className="p-3 lg:p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
+          <div className="text-[10px] lg:text-xs text-zinc-400">Alertas</div>
+          <div className="text-xl lg:text-2xl font-black text-amber-400 mt-1">
             {insumos.filter((i) => i.currentStock <= i.minStock).length}
           </div>
-          <div className="text-[10px] text-amber-500 mt-1 font-medium">Abaixo do estoque mínimo</div>
+          <div className="text-[9px] lg:text-[10px] text-amber-500 mt-1 font-medium">estoque baixo</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
-          <div className="text-xs text-zinc-400">Valor Total em Estoque</div>
-          <div className="text-2xl font-black text-emerald-400 mt-1">
+        <div className="p-3 lg:p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
+          <div className="text-[10px] lg:text-xs text-zinc-400">Valor Total</div>
+          <div className="text-lg lg:text-2xl font-black text-emerald-400 mt-1">
             {formatCurrency(
               insumos.reduce((acc, i) => acc + i.currentStock * i.unitCost, 0)
             )}
           </div>
-          <div className="text-[10px] text-zinc-500 mt-1">Soma (Estoque × Custo Base)</div>
+          <div className="text-[9px] lg:text-[10px] text-zinc-500 mt-1">estoque</div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
-          <div className="text-xs text-zinc-400">Categorias Ativas</div>
-          <div className="text-2xl font-black text-white mt-1">{categories.length - 1}</div>
-          <div className="text-[10px] text-zinc-500 mt-1">Farináceos, laticínios, embalagens</div>
+        <div className="p-3 lg:p-4 rounded-2xl bg-[#121214] border border-zinc-800/80">
+          <div className="text-[10px] lg:text-xs text-zinc-400">Categorias</div>
+          <div className="text-xl lg:text-2xl font-black text-white mt-1">{categories.length - 1}</div>
+          <div className="text-[9px] lg:text-[10px] text-zinc-500 mt-1">ativas</div>
         </div>
       </div>
 
       {/* Filters Bar */}
-      <div className="p-4 rounded-2xl bg-[#121214] border border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
+      <div className="p-3 lg:p-4 rounded-2xl bg-[#121214] border border-zinc-800/80 flex flex-col gap-3">
+        <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por código, insumo ou fornecedor..."
-            className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+            placeholder="Buscar insumo..."
+            className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400">Categoria:</span>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="bg-[#1A1A1E] border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="flex-1 min-w-[120px] bg-[#1A1A1E] border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500"
+          >
+            {categories.map((c) => (
+              <option key={c} value={c}>{c === 'All' ? 'Todas' : c}</option>
+            ))}
+          </select>
 
           <button
             onClick={() => setShowLowStockOnly(!showLowStockOnly)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+            className={`flex-1 min-w-[100px] px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
               showLowStockOnly
                 ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
                 : 'bg-[#1A1A1E] text-zinc-400 border-zinc-800 hover:text-white'
@@ -306,8 +305,8 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
         </div>
       </div>
 
-      {/* Insumos Main Table */}
-      <div className="bg-[#121214] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-xl">
+      {/* Insumos Main Table - Desktop */}
+      <div className="hidden lg:block bg-[#121214] border border-zinc-800/80 rounded-2xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -318,7 +317,7 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
                 <th className="py-3.5 px-4">Unid.</th>
                 <th className="py-3.5 px-4">Estoque Atual</th>
                 <th className="py-3.5 px-4">Estoque Mín.</th>
-                <th className="py-3.5 px-4">Custo Base (por g/ml/un)</th>
+                <th className="py-3.5 px-4">Custo Base</th>
                 <th className="py-3.5 px-4">Fornecedor</th>
                 <th className="py-3.5 px-4 text-center">Ações</th>
               </tr>
@@ -379,13 +378,78 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({ insumos, setInsumo
               {filteredInsumos.length === 0 && (
                 <tr>
                   <td colSpan={9} className="py-8 text-center text-zinc-500">
-                    Nenhum insumo encontrado para o filtro selecionado.
+                    Nenhum insumo encontrado.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Insumos Mobile Cards */}
+      <div className="lg:hidden space-y-3">
+        {filteredInsumos.map((item) => {
+          const isLowStock = item.currentStock <= item.minStock;
+          return (
+            <div key={item.id} className={`p-4 rounded-2xl border ${isLowStock ? 'bg-red-500/5 border-red-500/20' : 'bg-[#121214] border-zinc-800/80'}`}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-mono text-amber-500">{item.code}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-[9px] text-zinc-400">{item.unit}</span>
+                    {isLowStock && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 text-[9px] font-bold flex items-center gap-0.5">
+                        <AlertTriangle className="w-2.5 h-2.5" /> Baixo
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-extrabold text-white truncate">{item.name}</h3>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">{item.category}</p>
+                </div>
+                <div className="flex items-center gap-1.5 ml-2">
+                  <button
+                    onClick={() => setStockAdjustModal(item)}
+                    className="p-2 rounded-lg bg-zinc-800 text-amber-400"
+                  >
+                    <ArrowUpDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item.id)}
+                    className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-red-400"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="p-2 rounded-xl bg-[#1A1A1E]">
+                  <div className="text-[9px] text-zinc-500 mb-0.5">Estoque</div>
+                  <div className="text-xs font-bold text-white">{formatUnitDisplay(item.currentStock, item.unit)}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-[#1A1A1E]">
+                  <div className="text-[9px] text-zinc-500 mb-0.5">Mínimo</div>
+                  <div className="text-xs font-bold text-zinc-400">{formatUnitDisplay(item.minStock, item.unit)}</div>
+                </div>
+                <div className="p-2 rounded-xl bg-[#1A1A1E]">
+                  <div className="text-[9px] text-zinc-500 mb-0.5">Custo</div>
+                  <div className="text-xs font-bold text-emerald-400">{formatCurrency(item.unitCost)}</div>
+                </div>
+              </div>
+              
+              {item.supplier && (
+                <p className="text-[10px] text-zinc-500 mt-2 truncate">Forn: {item.supplier}</p>
+              )}
+            </div>
+          );
+        })}
+
+        {filteredInsumos.length === 0 && (
+          <div className="p-8 text-center text-zinc-500 text-sm">
+            Nenhum insumo encontrado.
+          </div>
+        )}
       </div>
 
       {/* MODAL: Novo Insumo */}

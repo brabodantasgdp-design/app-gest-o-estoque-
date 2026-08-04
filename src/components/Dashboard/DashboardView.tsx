@@ -113,101 +113,100 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     .slice(0, 5);
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="space-y-4 lg:space-y-6 pb-12 animate-in fade-in duration-300">
       
       {/* Top Banner Context */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-zinc-800/60">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-800/60">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
-            <span>Dashboard Financeiro & NFs</span>
-            <span className="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
-              PostgreSQL
+          <h1 className="text-lg lg:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <span className="truncate">Dashboard</span>
+            <span className="text-[10px] lg:text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
+              NFs
             </span>
           </h1>
-          <p className="text-xs text-zinc-400 mt-1">
-            Visão consolidada de despesas, top fornecedores e categorias do tenant:{' '}
-            <strong className="text-amber-400 font-extrabold">{currentTenant?.name || 'SaaS EBD ElBravoDantas'}</strong>
+          <p className="text-[11px] lg:text-xs text-zinc-400 mt-1">
+            Despesas de <strong className="text-amber-400">{currentTenant?.name || 'Minha Loja'}</strong>
           </p>
         </div>
 
         <button
           onClick={onNavigateToInvoices}
-          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg shadow-amber-500/20 cursor-pointer self-start md:self-auto"
+          className="px-3 lg:px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-extrabold flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 cursor-pointer self-start sm:self-auto"
         >
-          <span>Gerenciar Notas Fiscais</span>
+          <span>Notas Fiscais</span>
           <ArrowUpRight className="w-4 h-4" />
         </button>
       </div>
 
       {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         
         {/* Total Notas Mês */}
-        <div className="p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-3 relative overflow-hidden group">
+        <div className="p-3 lg:p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2 lg:space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-400">Total Notas (Mês)</span>
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <FileText className="w-4 h-4" />
+            <span className="text-[10px] lg:text-xs font-bold text-zinc-400">Notas</span>
+            <div className="p-1.5 lg:p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <FileText className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             </div>
           </div>
           <div>
-            <div className="text-3xl font-black text-white">
+            <div className="text-xl lg:text-3xl font-black text-white">
               {serverMetrics?.totalNotasMes ?? totalNotas}
             </div>
-            <div className="text-[11px] text-emerald-400 font-bold mt-1 flex items-center gap-1">
-              <span>+12% vs mês anterior</span>
+            <div className="text-[9px] lg:text-[11px] text-emerald-400 font-bold mt-1">
+              +12% mês
             </div>
           </div>
         </div>
 
         {/* Total Gasto Mês */}
-        <div className="p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-3 relative overflow-hidden group">
+        <div className="p-3 lg:p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2 lg:space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-400">Total Gasto (Mês)</span>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <DollarSign className="w-4 h-4" />
+            <span className="text-[10px] lg:text-xs font-bold text-zinc-400">Gasto</span>
+            <div className="p-1.5 lg:p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <DollarSign className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             </div>
           </div>
           <div>
-            <div className="text-3xl font-black text-emerald-400">
+            <div className="text-lg lg:text-3xl font-black text-emerald-400">
               {formatCurrency(serverMetrics?.totalGastoMes ?? totalGasto)}
             </div>
-            <div className="text-[11px] text-zinc-400 font-medium mt-1">
-              Processado via Inteligência Artificial
+            <div className="text-[9px] lg:text-[11px] text-zinc-400 font-medium mt-1">
+              via IA
             </div>
           </div>
         </div>
 
         {/* Top Fornecedor Principal */}
-        <div className="p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-3 relative overflow-hidden group">
+        <div className="p-3 lg:p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2 lg:space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-400">Maior Fornecedor</span>
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              <Building2 className="w-4 h-4" />
+            <span className="text-[10px] lg:text-xs font-bold text-zinc-400">Top Forn.</span>
+            <div className="p-1.5 lg:p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <Building2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             </div>
           </div>
           <div>
-            <div className="text-lg font-extrabold text-white truncate">
-              {topSuppliersList[0]?.name || 'Nenhum lançamento'}
+            <div className="text-sm lg:text-lg font-extrabold text-white truncate">
+              {topSuppliersList[0]?.name || 'Nenhum'}
             </div>
-            <div className="text-[11px] text-zinc-400 font-medium mt-1">
-              {topSuppliersList[0] ? `${formatCurrency(topSuppliersList[0].total)} acumulados` : 'Sem dados'}
+            <div className="text-[9px] lg:text-[11px] text-zinc-400 font-medium mt-1 truncate">
+              {topSuppliersList[0] ? formatCurrency(topSuppliersList[0].total) : 'Sem dados'}
             </div>
           </div>
         </div>
 
         {/* Categorias Mapeadas */}
-        <div className="p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-3 relative overflow-hidden group">
+        <div className="p-3 lg:p-5 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-2 lg:space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-zinc-400">Categorias Ativas</span>
-            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              <Tag className="w-4 h-4" />
+            <span className="text-[10px] lg:text-xs font-bold text-zinc-400">Categorias</span>
+            <div className="p-1.5 lg:p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <Tag className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             </div>
           </div>
           <div>
-            <div className="text-3xl font-black text-white">6 Categorias</div>
-            <div className="text-[11px] text-purple-300 font-semibold mt-1">
-              Alimentação, Insumos, Impostos, etc.
+            <div className="text-xl lg:text-3xl font-black text-white">6</div>
+            <div className="text-[9px] lg:text-[11px] text-purple-300 font-semibold mt-1">
+              Tipos ativos
             </div>
           </div>
         </div>
@@ -215,7 +214,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Main Charts & Analytics Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         
         {/* Gastos por Categoria - Gráfico de Barras */}
         <div className="lg:col-span-2 p-6 rounded-2xl bg-[#121214] border border-zinc-800/80 space-y-6">

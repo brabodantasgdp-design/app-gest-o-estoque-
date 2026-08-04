@@ -259,35 +259,35 @@ export default function App() {
         currentUser={currentUser}
       />
 
-      <div className="bg-[#121214] border-b border-zinc-800/60 px-6 py-2 flex items-center justify-between text-xs text-zinc-400">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 text-zinc-300 font-bold">
-            <UserCheck className="w-3.5 h-3.5 text-amber-500" />
-            <span>{currentUser.name}</span>
+      <div className="bg-[#121214] border-b border-zinc-800/60 px-4 lg:px-6 py-2 flex items-center justify-between text-xs text-zinc-400">
+        <div className="flex items-center gap-2 lg:gap-3 overflow-hidden">
+          <span className="flex items-center gap-1.5 text-zinc-300 font-bold truncate">
+            <UserCheck className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+            <span className="truncate">{currentUser.name}</span>
           </span>
-          <span className="text-zinc-600">•</span>
-          <span className="font-mono text-zinc-400">{currentUser.email}</span>
-          <span className="text-zinc-600">•</span>
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-            {isSuperAdmin ? 'Super Admin (Acesso Global)' : 'Store Owner (Tenant Isolado)'}
+          <span className="text-zinc-600 hidden sm:inline">•</span>
+          <span className="font-mono text-zinc-400 hidden sm:inline truncate">{currentUser.email}</span>
+          <span className="text-zinc-600 hidden md:inline">•</span>
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 hidden md:inline">
+            {isSuperAdmin ? 'Super Admin' : 'Store Owner'}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={handleOpenProfile}
             className="text-xs font-bold text-zinc-400 hover:text-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
           >
             <Edit2 className="w-3.5 h-3.5" />
-            <span>Meu Perfil</span>
+            <span className="hidden sm:inline">Meu Perfil</span>
           </button>
-          <span className="text-zinc-600">|</span>
+          <span className="text-zinc-600 hidden sm:inline">|</span>
           <button
             onClick={handleLogout}
             className="text-xs font-bold text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Sair</span>
+            <span className="hidden sm:inline">Sair</span>
           </button>
         </div>
       </div>
@@ -300,7 +300,7 @@ export default function App() {
           currentTenant={currentTenant}
         />
 
-        <main className="flex-1 p-6 max-w-[1600px] mx-auto overflow-x-hidden">
+        <main className="flex-1 p-4 lg:p-6 max-w-[1600px] mx-auto overflow-x-hidden pb-24 lg:pb-6">
           <ErrorBoundary fallbackLabel={`Erro no modulo: ${activeTab}`}>
           {activeTab === 'dashboard' && (
             <DashboardView
