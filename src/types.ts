@@ -106,7 +106,7 @@ export interface Order {
   customerEmail: string;
   items: OrderItem[];
   totalAmount: number;
-  status: 'Delivered' | 'Processing' | 'Shipped' | 'Cancelled';
+  status: 'Pendente' | 'Delivered' | 'Processing' | 'Shipped' | 'Cancelled';
   date: string;
   timeAgo: string;
 }

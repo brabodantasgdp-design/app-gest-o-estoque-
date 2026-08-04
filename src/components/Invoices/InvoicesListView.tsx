@@ -104,7 +104,7 @@ export const InvoicesListView: React.FC<InvoicesListViewProps> = ({
   };
 
   const handleExportCSV = () => {
-    const tenantId = currentTenant?.id || 'tenant-1';
+    const tenantId = currentTenant?.id || '';
     window.open(`/api/invoices/export?tenantId=${tenantId}`, '_blank');
   };
 

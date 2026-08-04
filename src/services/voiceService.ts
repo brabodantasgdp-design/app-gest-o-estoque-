@@ -1,5 +1,5 @@
 import { Insumo, Product, Order, FichaTecnica, InvoiceScan } from '../types';
-import { insumosService, productsService, ordersService, fichasService, invoiceService } from '../lib/database';
+import { insumosService, productsService, ordersService, fichasService, invoicesService } from '../lib/database';
 
 export interface CommandResult {
   action: string;

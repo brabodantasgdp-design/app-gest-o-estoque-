@@ -43,7 +43,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   useEffect(() => {
     const fetchDashboardAPI = async () => {
       try {
-        const tenantId = currentTenant?.id || 'tenant-1';
+        const tenantId = currentTenant?.id || '';
         const res = await fetch(`/api/dashboard?tenantId=${tenantId}`);
         if (!res.ok) {
           console.warn('Dashboard API not available, using client-side fallback');

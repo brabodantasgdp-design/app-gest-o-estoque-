@@ -287,7 +287,7 @@ export const tenantsService = {
 // ============================================
 export const insumosService = {
   async getAll(tenantId: string) {
-    console.log('[DB] insumosService.getAll tenantId:', tenantId, 'isConfigured:', isConfigured);
+
     if (!isConfigured) return loadLocal<Insumo>('ebd_insumos').filter(i => i.tenantId === tenantId);
     try {
       const { data, error } = await supabase
@@ -296,10 +296,10 @@ export const insumosService = {
         .eq('tenant_id', tenantId)
         .order('name');
       if (error) {
-        console.error('[DB] insumosService.getAll ERROR:', JSON.stringify(error));
+        console.error('Erro ao buscar insumos:', error.message);
         throw error;
       }
-      console.log('[DB] insumosService.getAll raw data:', data?.length, 'rows');
+
       return (data || []).map(i => ({
         id: i.id,
         tenantId: i.tenant_id,
@@ -314,7 +314,6 @@ export const insumosService = {
         lastUpdated: i.last_updated,
       })) as Insumo[];
     } catch (err) {
-      console.error('[DB] insumosService.getAll catch:', err);
       return loadLocal<Insumo>('ebd_insumos').filter(i => i.tenantId === tenantId);
     }
   },
@@ -324,11 +323,7 @@ export const insumosService = {
   },
 
   async create(insumo: Omit<Insumo, 'id'>) {
-    console.log('[DB] isConfigured:', isConfigured);
-    console.log('[DB] Creating insumo:', insumo.name);
-    
     if (!isConfigured) {
-      console.log('[DB] Supabase not configured, saving to localStorage');
       const local = { ...insumo, id: genId() } as Insumo;
       const all = loadLocal<Insumo>('ebd_insumos');
       all.push(local);
@@ -336,7 +331,6 @@ export const insumosService = {
       return local;
     }
     
-    console.log('[DB] Inserting to Supabase table:', TABLES.INSUMO);
     const { data, error } = await supabase.from(TABLES.INSUMO).insert({
       tenant_id: insumo.tenantId,
       code: insumo.code,
@@ -351,12 +345,10 @@ export const insumosService = {
     }).select().single();
     
     if (error) {
-      console.error('[DB] INSERT ERROR:', JSON.stringify(error));
-      alert(`Erro Supabase: ${error.message}\nCode: ${error.code}\nDetails: ${error.details}`);
+      console.error('Erro ao criar insumo:', error.message);
       throw error;
     }
     
-    console.log('[DB] Insert SUCCESS:', data);
     return data;
   },
 

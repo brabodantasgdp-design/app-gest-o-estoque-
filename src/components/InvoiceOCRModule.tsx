@@ -184,7 +184,7 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
         // Auto register new insumo
         const newInsumo: Insumo = {
           id: `ins-${Date.now()}-${Math.random()}`,
-          tenantId: activeScan.tenantId || 'tenant-1',
+          tenantId: activeScan.tenantId || '',
           code: `INS-${Math.floor(300 + Math.random() * 700)}`,
           name: item.matchedInsumoName,
           category: item.category || 'Entrada IA (OCR)',

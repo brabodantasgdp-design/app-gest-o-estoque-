@@ -146,7 +146,7 @@ export const FichaTecnicaModule: React.FC<FichaTecnicaModuleProps> = ({
   const handleExportProduct = async (ficha: FichaTecnica) => {
     const newProd: Product = {
       id: `p-${Date.now()}`,
-      tenantId: ficha.tenantId || 'tenant-1',
+          tenantId: ficha.tenantId || '',
       name: ficha.productName,
       category: ficha.category,
       sku: `PROD-${Math.floor(1000 + Math.random() * 9000)}`,

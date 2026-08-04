@@ -17,7 +17,7 @@ import { SimpleVoiceAssistant } from './components/SimpleVoiceAssistant';
 import {
   CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
 } from './types';
-import { LogOut, UserCheck, Edit2, X, Save, Mic } from 'lucide-react';
+import { LogOut, UserCheck, Edit2, X, Save } from 'lucide-react';
 import {
   tenantsService,
   insumosService,
@@ -293,16 +293,18 @@ export default function App() {
 
   const handleVoiceCreateProduct = useCallback(async (name: string, price: number) => {
     await productsService.create({
-      id: `prod-${Date.now()}`,
       tenantId: activeTenantId,
       name,
-      price,
-      cost: 0,
-      margin: 0,
       category: 'Via Voz',
-      description: 'Criado via assistente de voz',
-      active: true,
-      createdAt: new Date().toISOString(),
+      sku: `VOZ-${Date.now()}`,
+      stockQuantity: 0,
+      oldPrice: price,
+      saleDiscountPercent: 0,
+      newPrice: price,
+      itemsSold: 0,
+      fichaTecnicaId: undefined,
+      status: 'In Stock',
+      image: undefined,
     });
     await handleRefreshData();
   }, [activeTenantId, handleRefreshData]);
@@ -310,7 +312,7 @@ export default function App() {
   const handleVoiceUpdateProduct = useCallback(async (name: string, price: number) => {
     const product = allProducts.find(p => p.name.toLowerCase().includes(name.toLowerCase()));
     if (!product) throw new Error(`Produto "${name}" não encontrado`);
-    await productsService.update(product.id, { ...product, price });
+    await productsService.update(product.id, { ...product, newPrice: price });
     await handleRefreshData();
   }, [allProducts, handleRefreshData]);
 
@@ -325,13 +327,15 @@ export default function App() {
     const prod = allProducts.find(p => p.name.toLowerCase().includes(product.toLowerCase()));
     if (!prod) throw new Error(`Produto "${product}" não encontrado`);
     await ordersService.create({
-      id: `ord-${Date.now()}`,
       tenantId: activeTenantId,
+      orderNumber: `PED-${Date.now()}`,
       customerName: customer,
-      items: [{ productId: prod.id, productName: prod.name, quantity, unitPrice: prod.price, subtotal: prod.price * quantity }],
-      totalAmount: prod.price * quantity,
-      status: 'Pendente',
-      createdAt: new Date().toISOString(),
+      customerEmail: '',
+      items: [{ productName: prod.name, quantity, unitPrice: prod.newPrice }],
+      totalAmount: prod.newPrice * quantity,
+      status: 'Processing',
+      date: new Date().toISOString().split('T')[0],
+      timeAgo: 'agora',
     });
     await handleRefreshData();
   }, [allProducts, activeTenantId, handleRefreshData]);
