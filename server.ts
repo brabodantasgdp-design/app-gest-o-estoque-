@@ -147,12 +147,12 @@ async function startServer() {
   app.post("/api/auth/login", (req, res) => {
     const { email, password } = req.body;
 
-    if (email === "admin@retailpro.com.br" || email === "superadmin@retailpro.com") {
+    if (email === "brabo.dantas.gdp@gmail.com" || email === "admin@retailpro.com.br" || email === "superadmin@retailpro.com") {
       return res.json({
         success: true,
         user: {
           id: "usr-superadmin",
-          name: "Super Admin",
+          name: "Brabo Dantas",
           email: email,
           role: "super_admin",
           tenantId: undefined,

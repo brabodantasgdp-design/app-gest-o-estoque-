@@ -34,10 +34,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
       }
     } catch (err) {
       // Fallback local auth simulation if server is rebooting
-      if (email.includes('super') || email.includes('admin')) {
+      if (email.includes('super') || email.includes('admin') || email === 'brabo.dantas.gdp@gmail.com') {
         onLoginSuccess({
           id: 'usr-superadmin',
-          name: 'Super Admin',
+          name: 'Brabo Dantas',
           email: email,
           role: 'super_admin',
           tenantName: 'Painel Global SaaS',
@@ -59,8 +59,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
 
   const handleQuickSelect = (type: 'super_admin' | 'owner_1' | 'owner_2') => {
     if (type === 'super_admin') {
-      setEmail('admin@retailpro.com.br');
-      setPassword('admin123456');
+      setEmail('brabo.dantas.gdp@gmail.com');
+      setPassword('87849244');
     } else if (type === 'owner_1') {
       setEmail('alexandre@padariagourmet.com.br');
       setPassword('padaria123');
@@ -129,7 +129,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, tenants })
               type="button"
               onClick={() => handleQuickSelect('super_admin')}
               className={`p-2 rounded-lg border text-left font-semibold transition-all ${
-                email.includes('admin')
+                email.includes('admin') || email.includes('brabo')
                   ? 'bg-amber-500/20 border-amber-500 text-amber-300'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
               }`}

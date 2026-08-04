@@ -1,6 +1,0 @@
-{
-  "name": "EBD ElBravoDantas",
-  "description": "SaaS de Gestão de Varejo, Insumos, Fichas Técnicas, Precificação e Estoque Inteligente com IA",
-  "requestFramePermissions": ["camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

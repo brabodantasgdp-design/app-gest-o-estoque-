@@ -19,7 +19,7 @@ import {
   SAMPLE_INVOICES
 } from './data/mockData';
 import { CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User } from './types';
-import { TrendingUp, DollarSign, PieChart, ShieldCheck, Database, Cpu, LogOut, UserCheck } from 'lucide-react';
+import { TrendingUp, DollarSign, PieChart, ShieldCheck, Database, Cpu, LogOut, UserCheck, Edit2, X, Save } from 'lucide-react';
 
 export default function App() {
   // Auth state
@@ -29,6 +29,9 @@ export default function App() {
   const [currency, setCurrency] = useState<CurrencyType>('BRL');
   const [searchTerm, setSearchTerm] = useState('');
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
 
   // Multi-tenant State
   const [tenants, setTenants] = useState<Tenant[]>(INITIAL_TENANTS);
@@ -133,6 +136,25 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
+  const handleOpenProfile = () => {
+    if (currentUser) {
+      setProfileName(currentUser.name);
+      setProfileEmail(currentUser.email);
+    }
+    setIsProfileModalOpen(true);
+  };
+
+  const handleSaveProfile = () => {
+    if (currentUser) {
+      setCurrentUser({
+        ...currentUser,
+        name: profileName,
+        email: profileEmail,
+      });
+      setIsProfileModalOpen(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0B0B0C] text-zinc-100 font-sans antialiased selection:bg-amber-500 selection:text-black">
       
@@ -163,13 +185,23 @@ export default function App() {
           </span>
         </div>
 
-        <button
-          onClick={() => setCurrentUser(null)}
-          className="text-xs font-bold text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Sair</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleOpenProfile}
+            className="text-xs font-bold text-zinc-400 hover:text-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            <span>Meu Perfil</span>
+          </button>
+          <span className="text-zinc-600">|</span>
+          <button
+            onClick={() => setCurrentUser(null)}
+            className="text-xs font-bold text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sair</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex">
@@ -313,6 +345,72 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Profile Edit Modal */}
+      {isProfileModalOpen && currentUser && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#121214] border border-zinc-800 rounded-2xl p-6 w-full max-w-md space-y-4 text-xs shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+              <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-amber-500" />
+                Editar Meu Perfil
+              </h3>
+              <button
+                onClick={() => setIsProfileModalOpen(false)}
+                className="text-zinc-500 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1">Nome Completo</label>
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1">E-mail</label>
+                <input
+                  type="email"
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
+                  className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-zinc-400 font-bold mb-1">Função</label>
+                <input
+                  type="text"
+                  disabled
+                  value={currentUser.role === 'super_admin' ? 'Super Admin (Acesso Global)' : 'Store Owner'}
+                  className="w-full bg-[#18181C] border border-zinc-800 rounded-xl p-2.5 text-amber-400 font-bold cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-zinc-800">
+              <button
+                onClick={() => setIsProfileModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveProfile}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-extrabold text-xs shadow-lg shadow-orange-500/20 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
