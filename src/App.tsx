@@ -13,7 +13,7 @@ import { SuperAdminModule } from './components/SuperAdminModule';
 import { ReportsView } from './components/ReportsView';
 import { SettingsView } from './components/SettingsView';
 import { LoginForm } from './components/Auth/LoginForm';
-import { SimpleVoiceAssistant } from './components/SimpleVoiceAssistant';
+import { LiveAgentIndicator } from './components/LiveAgentIndicator';
 import {
   CurrencyType, Product, Tenant, Insumo, FichaTecnica, Order, InvoiceScan, User
 } from './types';
@@ -44,7 +44,6 @@ export default function App() {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [allInvoices, setAllInvoices] = useState<InvoiceScan[]>([]);
-  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -269,7 +268,6 @@ export default function App() {
 
   const handleVoiceCreateInsumo = useCallback(async (name: string, quantity: number, unit: string, price: number) => {
     await insumosService.create({
-      id: `ins-${Date.now()}`,
       tenantId: activeTenantId,
       code: `INS-${Math.floor(100 + Math.random() * 900)}`,
       name,
@@ -591,8 +589,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Voice Assistant Floating Button */}
-      {/* Voice button removed - focusing on OCR photo analysis */}
+      {currentUser && activeTenantId && (
+        <LiveAgentIndicator tenantId={activeTenantId} onRefresh={handleRefreshData} />
+      )}
 
     </div>
   );

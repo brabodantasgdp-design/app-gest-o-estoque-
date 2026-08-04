@@ -36,7 +36,9 @@ function genId() {
 export const authService = {
   async login(email: string, password: string) {
     if (!isConfigured) {
-      if (email === 'brabo.dantas.gdp@gmail.com' && password === '87849244') {
+      const adminEmail = import.meta.env.SUPABASE_ADMIN_EMAIL || 'brabo.dantas.gdp@gmail.com';
+      const adminPassword = import.meta.env.SUPABASE_ADMIN_PASSWORD || '87849244';
+      if (email === adminEmail && password === adminPassword) {
         const userData = {
           id: 'usr-superadmin',
           name: 'Brabo Dantas',
@@ -56,7 +58,8 @@ export const authService = {
 
     try {
       // Super admin: ensure tenant exists
-      if (email === 'brabo.dantas.gdp@gmail.com') {
+      const adminEmail = import.meta.env.SUPABASE_ADMIN_EMAIL || 'brabo.dantas.gdp@gmail.com';
+      if (email === adminEmail) {
         // Check or create tenant
         let { data: tenant } = await supabase
           .from(TABLES.TENANT)
@@ -655,10 +658,13 @@ export const ordersService = {
         orders.push({
           id: o.id,
           tenantId: o.tenant_id,
+          orderNumber: o.order_number || `#${o.id?.toString().slice(-6)}`,
           customerName: o.customer_name,
+          customerEmail: o.customer_email || '',
           totalAmount: o.total_amount,
           status: o.status,
-          createdAt: o.created_at,
+          date: o.created_at?.split('T')[0] || '',
+          timeAgo: 'algum tempo',
           items: (items || []).map((item: any) => ({
             productName: item.product_name,
             quantity: item.quantity,
@@ -710,7 +716,7 @@ export const ordersService = {
     return orderData;
   },
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: Order['status']) {
     if (!isConfigured) {
       const all = loadLocal<Order>('ebd_orders');
       const idx = all.findIndex(o => o.id === id);

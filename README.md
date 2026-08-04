@@ -1,20 +1,97 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# EBD ElBravoDantas - Gestão de Varejo & IA
 
-# Run and deploy your AI Studio app
+Sistema completo de gestão de estoque, vendas e inteligência artificial para varejo.
 
-This contains everything you need to run your app locally.
+## Funcionalidades
 
-View your app in AI Studio: https://ai.studio/apps/5cbf9d1c-cf76-4ec8-b6f3-e9bbbb0f8bd0
+- 📦 **Gestão de Estoque** - Controle de insumos com alertas de estoque baixo
+- 🏷️ **Produtos** - Cadastro e gestão de produtos com fichas técnicas
+- 🛒 **Pedidos** - Criação e acompanhamento de pedidos
+- 📄 **Notas Fiscais** - OCR inteligente com Gemini AI para leitura de NF-e
+- 📊 **Dashboard** - Métricas de vendas, estoque e lucratividade
+- 🤖 **EBD AI** - Assistente inteligente com chat, voz e tool calling
+- 🎤 **Assistente de Voz** - Comandos por voz para operações rápidas
+- 🔐 **Multi-tenant** - Isolamento de dados por loja/tenant
+- 👤 **Super Admin** - Painel administrativo global
 
-## Run Locally
+## Pré-requisitos
 
-**Prerequisites:**  Node.js
+- Node.js (v18+)
+- npm
 
+## Instalação
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. Clone o repositório
+2. Instale as dependências:
+   ```bash
+   npm install
+   ```
+3. Copie o arquivo de exemplo de ambiente:
+   ```bash
+   cp .env.example .env.local
+   ```
+4. Preencha os valores em `.env.local`
+
+## Configuração
+
+### Supabase (obrigatório)
+1. Crie um projeto no [Supabase](https://supabase.com)
+2. Execute o SQL em `supabase-schema.sql` no painel do Supabase
+3. Adicione as credenciais no `.env.local`:
+   ```
+   VITE_SUPABASE_URL="https://seu-projeto.supabase.co"
+   VITE_SUPABASE_ANON_KEY="sua-chave-anon"
+   ```
+
+### Gemini API (para OCR e IA)
+1. Obtenha uma chave em [Google AI Studio](https://aistudio.google.com)
+2. Adicione no `.env.local`:
+   ```
+   GEMINI_API_KEY="sua-chave-gemini"
+   ```
+
+## Execução
+
+### Modo desenvolvimento:
+```bash
+npm run dev
+```
+
+### Build de produção:
+```bash
+npm run build
+npm start
+```
+
+### Linting:
+```bash
+npm run lint
+```
+
+## Estrutura do Projeto
+
+```
+├── server.ts              Servidor Express + API routes
+├── src/
+│   ├── App.tsx            Componente raiz
+│   ├── types.ts           Tipos TypeScript
+│   ├── lib/
+│   │   ├── database.ts    Serviços CRUD (Supabase + LocalStorage fallback)
+│   │   └── supabase.ts    Cliente Supabase
+│   ├── ebdAi/             Módulo de inteligência artificial
+│   ├── services/          Serviços de Gemini, voz, ferramentas
+│   ├── components/        Componentes React (UI)
+│   └── hooks/             Custom hooks
+├── supabase-schema.sql    Schema do banco de dados
+├── .env.example           Template de variáveis de ambiente
+└── package.json
+```
+
+## Tecnologias
+
+- React 19 + TypeScript
+- Vite 6
+- Tailwind CSS 4
+- Supabase (PostgreSQL + Auth + RLS)
+- Google Gemini AI (OCR + Chat)
+- Express.js

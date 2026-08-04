@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { geminiService } from '../services/geminiService';
+import { processOCR } from '../services/ocrService';
 import {
   ScanText,
   Upload,
@@ -115,9 +115,9 @@ export const InvoiceOCRModule: React.FC<InvoiceOCRModuleProps> = ({
       let invoiceData;
       
       if (base64Data) {
-        invoiceData = await geminiService.processOCR(base64Data, mimeType || 'image/jpeg');
+        invoiceData = await processOCR(base64Data, mimeType || 'image/jpeg');
       } else {
-        invoiceData = await geminiService.processOCR(base64Data || '', mimeType || 'image/jpeg');
+        invoiceData = await processOCR(base64Data || '', mimeType || 'image/jpeg');
       }
       
       if (invoiceData && invoiceData.supplierName) {

@@ -12,11 +12,13 @@
 
 import { EbdAiCore } from './core';
 import { EbdAiVoice } from './voice';
-import { EbdAiAlerts } from './alerts';
-import { EbdAiPredictions } from './predictions';
-import { EbdAiWorkflows } from './workflows';
+import { EbdAiAlerts, type Alert, type Schedule } from './alerts';
+import { EbdAiPredictions, type Prediction } from './predictions';
+import { EbdAiWorkflows, type Workflow } from './workflows';
 import { EbdAiExport } from './export';
 import { EbdAiMemory } from './memory';
+
+export type { Alert, Schedule, Prediction, Workflow };
 
 // ============================================================
 // TYPES
@@ -52,48 +54,6 @@ export interface FunctionCall {
   name: string;
   args: Record<string, any>;
   result?: any;
-}
-
-export interface Alert {
-  id: string;
-  type: 'stock_low' | 'stock_critical' | 'custom';
-  title: string;
-  message: string;
-  severity: 'info' | 'warning' | 'critical';
-  timestamp: number;
-  read: boolean;
-  data?: any;
-}
-
-export interface Schedule {
-  id: string;
-  name: string;
-  cron: string;
-  action: string;
-  params: Record<string, any>;
-  enabled: boolean;
-  lastRun?: number;
-  nextRun?: number;
-}
-
-export interface Prediction {
-  itemId: string;
-  itemName: string;
-  currentStock: number;
-  dailyUsage: number;
-  daysUntilEmpty: number;
-  reorderDate: Date;
-  suggestedQuantity: number;
-}
-
-export interface Workflow {
-  id: string;
-  name: string;
-  trigger: string;
-  condition: string;
-  action: string;
-  params: Record<string, any>;
-  enabled: boolean;
 }
 
 export interface ExportOptions {
@@ -234,7 +194,7 @@ export class EbdAi {
   // SCHEDULES
   // ============================================================
 
-  async addSchedule(schedule: Omit<Schedule, 'id'>): Promise<Schedule> {
+  async addSchedule(schedule: Omit<Schedule, 'id' | 'nextRun'>): Promise<Schedule> {
     return this.alerts.addSchedule(schedule);
   }
 
@@ -263,7 +223,7 @@ export class EbdAi {
   // WORKFLOWS
   // ============================================================
 
-  async addWorkflow(workflow: Omit<Workflow, 'id'>): Promise<Workflow> {
+  async addWorkflow(workflow: Omit<Workflow, 'id' | 'executionCount'>): Promise<Workflow> {
     return this.workflows.add(workflow);
   }
 
