@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Sidebar, TabType } from './components/Sidebar';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { DashboardView } from './components/Dashboard/DashboardView';
 import { InvoicesListView } from './components/Invoices/InvoicesListView';
 import { InsumosModule } from './components/InsumosModule';
@@ -27,20 +28,14 @@ import {
 } from './lib/database';
 
 export default function App() {
-  // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [currency, setCurrency] = useState<CurrencyType>('BRL');
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Profile edit modal
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
-
-  // Data state
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<string>('');
   const [allInsumos, setAllInsumos] = useState<Insumo[]>([]);
@@ -49,7 +44,6 @@ export default function App() {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [allInvoices, setAllInvoices] = useState<InvoiceScan[]>([]);
 
-  // Check for existing session
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -69,10 +63,8 @@ export default function App() {
     checkSession();
   }, []);
 
-  // Load tenants (only for super admin)
   useEffect(() => {
     if (!currentUser || currentUser.role !== 'super_admin') return;
-
     const loadTenants = async () => {
       try {
         const data = await tenantsService.getAll();
@@ -84,10 +76,8 @@ export default function App() {
     loadTenants();
   }, [currentUser]);
 
-  // Load data for active tenant
   useEffect(() => {
     if (!activeTenantId) return;
-
     const loadAllData = async () => {
       try {
         const [insumos, fichas, products, orders, invoices] = await Promise.all([
@@ -97,7 +87,6 @@ export default function App() {
           ordersService.getByTenant(activeTenantId),
           invoicesService.getByTenant(activeTenantId),
         ]);
-
         setAllInsumos(insumos);
         setAllFichas(fichas);
         setAllProducts(products);
@@ -110,45 +99,26 @@ export default function App() {
     loadAllData();
   }, [activeTenantId]);
 
-  // Filtered data scoped to active tenant
   const tenantInsumos = useMemo(() => allInsumos, [allInsumos]);
   const tenantFichas = useMemo(() => allFichas, [allFichas]);
   const tenantProducts = useMemo(() => allProducts, [allProducts]);
   const tenantOrders = useMemo(() => allOrders, [allOrders]);
   const tenantInvoices = useMemo(() => allInvoices, [allInvoices]);
 
-  const currentTenant = tenants.find((t) => t.id === activeTenantId);
+  const currentTenant = tenants.find((t) => t.id === activeTenantId) || null;
   const lowStockCount = tenantInsumos.filter((i) => i.currentStock <= i.minStock).length;
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
-  // Show loading state
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-[#0B0B0C] flex items-center justify-center">
-        <div className="text-amber-400 font-bold text-sm animate-pulse">Carregando...</div>
-      </div>
-    );
-  }
+  const handleLoginSuccess = useCallback((user: User) => {
+    setCurrentUser(user);
+    if (user.tenantId) {
+      setActiveTenantId(user.tenantId);
+    }
+    if (user.role === 'super_admin') {
+      tenantsService.getAll().then(setTenants).catch(console.error);
+    }
+  }, []);
 
-  // Show login if not authenticated
-  if (!currentUser) {
-    return (
-      <LoginForm
-        tenants={tenants}
-        onLoginSuccess={(user) => {
-          setCurrentUser(user);
-          if (user.tenantId) {
-            setActiveTenantId(user.tenantId);
-          }
-          // Load tenants for super admin
-          if (user.role === 'super_admin') {
-            tenantsService.getAll().then(setTenants).catch(console.error);
-          }
-        }}
-      />
-    );
-  }
-
-  // Handlers for CRUD operations with Supabase persistence
   const handleSetInsumos = useCallback((action: React.SetStateAction<Insumo[]>) => {
     setAllInsumos(action);
   }, []);
@@ -205,13 +175,20 @@ export default function App() {
     setActiveTab('dashboard');
   }, []);
 
-  const handleOpenProfile = () => {
-    setProfileName(currentUser.name);
-    setProfileEmail(currentUser.email);
-    setIsProfileModalOpen(true);
-  };
+  const handleLogout = useCallback(() => {
+    authService.logout();
+    setCurrentUser(null);
+  }, []);
 
-  const handleSaveProfile = () => {
+  const handleOpenProfile = useCallback(() => {
+    if (currentUser) {
+      setProfileName(currentUser.name);
+      setProfileEmail(currentUser.email);
+      setIsProfileModalOpen(true);
+    }
+  }, [currentUser]);
+
+  const handleSaveProfile = useCallback(() => {
     if (currentUser) {
       setCurrentUser({
         ...currentUser,
@@ -220,25 +197,35 @@ export default function App() {
       });
       setIsProfileModalOpen(false);
     }
-  };
+  }, [currentUser, profileName, profileEmail]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0B0B0C] flex items-center justify-center">
+        <div className="text-amber-400 font-bold text-sm animate-pulse">Carregando...</div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginForm tenants={tenants} onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-[#0B0B0C] text-zinc-100 font-sans antialiased selection:bg-amber-500 selection:text-black">
       
-      {/* Top Header */}
       <Header
         currency={currency}
         setCurrency={setCurrency}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
-        tenants={currentUser.role === 'super_admin' ? tenants : tenants.filter((t) => t.id === currentUser.tenantId)}
+        tenants={isSuperAdmin ? tenants : tenants.filter((t) => t.id === currentUser.tenantId)}
         activeTenantId={activeTenantId}
         setActiveTenantId={setActiveTenantId}
         onOpenSuperAdmin={() => setActiveTab('super_admin')}
         currentUser={currentUser}
       />
 
-      {/* User Session Bar */}
       <div className="bg-[#121214] border-b border-zinc-800/60 px-6 py-2 flex items-center justify-between text-xs text-zinc-400">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 text-zinc-300 font-bold">
@@ -249,7 +236,7 @@ export default function App() {
           <span className="font-mono text-zinc-400">{currentUser.email}</span>
           <span className="text-zinc-600">•</span>
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-            {currentUser.role === 'super_admin' ? 'Super Admin (Acesso Global)' : 'Store Owner (Tenant Isolado)'}
+            {isSuperAdmin ? 'Super Admin (Acesso Global)' : 'Store Owner (Tenant Isolado)'}
           </span>
         </div>
 
@@ -263,10 +250,7 @@ export default function App() {
           </button>
           <span className="text-zinc-600">|</span>
           <button
-            onClick={() => {
-              authService.logout();
-              setCurrentUser(null);
-            }}
+            onClick={handleLogout}
             className="text-xs font-bold text-zinc-400 hover:text-red-400 transition-colors flex items-center gap-1 cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -276,7 +260,6 @@ export default function App() {
       </div>
 
       <div className="flex">
-        {/* Left Vertical Sidebar */}
         <Sidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -284,8 +267,8 @@ export default function App() {
           currentTenant={currentTenant}
         />
 
-        {/* Main Content Viewport */}
         <main className="flex-1 p-6 max-w-[1600px] mx-auto overflow-x-hidden">
+          <ErrorBoundary fallbackLabel={`Erro no modulo: ${activeTab}`}>
           {activeTab === 'dashboard' && (
             <DashboardView
               invoices={tenantInvoices}
@@ -356,7 +339,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'super_admin' && currentUser.role === 'super_admin' && (
+          {activeTab === 'super_admin' && isSuperAdmin && (
             <SuperAdminModule
               tenants={tenants}
               setTenants={setTenants}
@@ -383,10 +366,10 @@ export default function App() {
               currentUser={currentUser}
             />
           )}
+          </ErrorBoundary>
         </main>
       </div>
 
-      {/* Profile Edit Modal */}
       {isProfileModalOpen && currentUser && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#121214] border border-zinc-800 rounded-2xl p-6 w-full max-w-md space-y-4 text-xs shadow-2xl">
@@ -427,7 +410,7 @@ export default function App() {
                 <input
                   type="text"
                   disabled
-                  value={currentUser.role === 'super_admin' ? 'Super Admin (Acesso Global)' : 'Store Owner'}
+                  value={isSuperAdmin ? 'Super Admin (Acesso Global)' : 'Store Owner'}
                   className="w-full bg-[#18181C] border border-zinc-800 rounded-xl p-2.5 text-amber-400 font-bold cursor-not-allowed"
                 />
               </div>

@@ -17,11 +17,11 @@ export const InvoiceDetailModal: React.FC<InvoiceDetailModalProps> = ({
   onUpdateInvoice,
   currency,
 }) => {
-  if (!isOpen || !invoice) return null;
-
-  const [category, setCategory] = useState<InvoiceCategoryEnum>(invoice.category || 'insumos');
-  const [notes, setNotes] = useState<string>(invoice.notes || '');
+  const [category, setCategory] = useState<InvoiceCategoryEnum>(invoice?.category || 'insumos');
+  const [notes, setNotes] = useState<string>(invoice?.notes || '');
   const [isSaved, setIsSaved] = useState(false);
+
+  if (!isOpen || !invoice) return null;
 
   const formatCurrency = (amount: number) => {
     const symbol = currency === 'BRL' ? 'R$' : currency === 'USD' ? '$' : '€';

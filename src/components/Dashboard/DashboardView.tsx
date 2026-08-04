@@ -45,6 +45,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       try {
         const tenantId = currentTenant?.id || 'tenant-1';
         const res = await fetch(`/api/dashboard?tenantId=${tenantId}`);
+        if (!res.ok) {
+          console.warn('Dashboard API not available, using client-side fallback');
+          return;
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          console.warn('Dashboard API returned non-JSON, using client-side fallback');
+          return;
+        }
         const data = await res.json();
 
         if (data.success && data.metrics) {
