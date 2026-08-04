@@ -44,7 +44,7 @@ export const LiveAgentIndicator: React.FC<Props> = ({ tenantId, onRefresh }) => 
     startedRef.current = true;
     const ctx = buildContext();
     if (!ctx) return;
-    const agent = createLiveAgent({ context: ctx, onState: setState });
+    const agent = createLiveAgent({ context: ctx, onState: setState, useAI: false });
     agentRef.current = agent;
     agent.start();
     return () => { agent.stop(); startedRef.current = false; };

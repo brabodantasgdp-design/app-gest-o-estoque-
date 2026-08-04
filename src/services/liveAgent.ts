@@ -74,6 +74,7 @@ export interface LiveAgentConfig {
   context?: SupabaseContext;
   onState: LiveAgentCallback;
   proactiveInterval?: number;
+  useAI?: boolean; // false = local regex + TTS, zero API cost
 }
 
 // ============================================================
@@ -359,44 +360,85 @@ export class LiveAgent {
 
   async sendText(text: string) {
     this.update({ status: "thinking", transcript: text });
+    const useAI = (this.config as any).useAI !== false;
+    if (useAI) { await this.sendTextWithAI(text); }
+    else { await this.sendTextLocal(text); }
+    this.update({ status: "idle" });
+  }
+
+  private async sendTextLocal(text: string) {
+    const parsed = this.localParse(text);
+    if (parsed.tool === "unknown") {
+      this.speak("Nao entendi. Tente: cadastrar, adicionar, remover, resumo ou alertas.");
+      return;
+    }
+    try {
+      const result = await this.executeTool(parsed.tool, parsed.args);
+      const msg = this.formatResultDirect(parsed.tool, result);
+      this.update({ lastAction: parsed.tool, response: msg });
+      this.speak(msg);
+    } catch (err: any) {
+      this.speak("Erro: " + err.message);
+    }
+  }
+
+  private localParse(text: string): { tool: string; args: Record<string, any> } {
+    const lower = text.toLowerCase().trim();
+
+    const regMatch = lower.match(/(?:cadastrar?|cria|novo)\s+(?:insumo|item|ingrediente)?\s*(.+?)(?:\s+(\d+[\\.,]?\d*)\s*(g|ml|un|kg|l))?(?:\s+(?:pre[cc]o|custo|a|por)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
+    if (regMatch) {
+      return { tool: "inventory_register", args: { name: regMatch[1].trim(), quantity: 0, unit: "g", unitCost: 0 } };
+    }
+
+    const addMatch = lower.match(/(?:adicione?|adicionar|entrou|chegou|recebi|coloca|bota|somou?)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+    if (addMatch) return { tool: "inventory_add", args: { item_name: addMatch[3].trim(), quantity: parseFloat(addMatch[1].replace(",", ".")) * 1 } };
+
+    const remMatch = lower.match(/(?:gastou?|gastei|usou?|usei|remove?|remover|tirar|baixar|diminuir|consumiu|perdi|saiu)\s+(\d+[\.,]?\d*)\s*(g|ml|un|kg|l)?\s+(?:do|da|de)?\s*(.+)/);
+    if (remMatch) return { tool: "inventory_remove", args: { item_name: remMatch[3].trim(), quantity: parseFloat(remMatch[1].replace(",", ".")) * 1 } };
+
+    const qMatch = lower.match(/(?:quanto|qual|estoque|consultar?)\s+(?:tem|tenho|est[aá])?\s*(?:de|do|da)?\s*(.+)/);
+    if (qMatch) return { tool: "inventory_query", args: { item_name: qMatch[1].trim() } };
+
+    if (/(?:resumo|relat[oó]rio|como\s+(?:est[aá]|t[aá])|dashboard|vis[aã]o\s+geral)/i.test(lower)) return { tool: "report_summary", args: {} };
+    if (/(?:alerta|estoque\s+baixo|cr[ií]tico|zerado|acabou|problema)/i.test(lower)) return { tool: "inventory_alert", args: {} };
+
+    const prodMatch = lower.match(/(?:criar?|cria|cadastrar?)\s+(?:produto|prod|item)\s+(.+?)(?:\s+(?:pre[cc]o|por|a)\s*r?\$?\s*(\d+[\.,]?\d*))?/);
+    if (prodMatch) return { tool: "product_create", args: { name: prodMatch[1].trim(), price: prodMatch[2] ? parseFloat(prodMatch[2].replace(",", ".")) : 0 } };
+
+    return { tool: "unknown", args: {} };
+  }
+
+  private async sendTextWithAI(text: string) {
     try {
       const res = await fetch("/api/ebdAi/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }], systemInstruction: SYSTEM_PROMPT, tools: TOOLS }),
       });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Server ${res.status}`); }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Server " + res.status); }
       const data = await res.json();
       let responseText = data.text || "";
-      const functionCalls: any[] = data.functionCalls || [];
-
+      const fcs: any[] = data.functionCalls || [];
       const results: any[] = [];
-      for (const fc of functionCalls) {
+      for (const fc of fcs) {
         try { results.push({ name: fc.name, result: await this.executeTool(fc.name, fc.args || {}) }); this.update({ lastAction: fc.name }); }
         catch (err: any) { results.push({ name: fc.name, error: err.message }); }
       }
-
-      if (results.length > 0) {
-        const res2 = await fetch("/api/ebdAi/agent", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              { role: "user", parts: [{ text }] },
-              ...functionCalls.map((fc: any) => ({ role: "model", parts: [{ functionCall: fc }] })),
-              { role: "user", parts: results.map((r: any) => ({ functionResponse: { name: r.name, response: r.error ? { error: r.error } : { result: r.result } } })) },
-            ],
-            systemInstruction: SYSTEM_PROMPT,
-          }),
-        });
-        if (res2.ok) responseText = (await res2.json()).text || this.formatResult(results);
-        else responseText = this.formatResult(results);
-      }
-
+      if (results.length > 0) responseText = this.formatResult(results);
       if (responseText) { this.update({ response: responseText }); this.speak(responseText); }
     } catch (err: any) {
       this.update({ status: "error", error: err.message });
     }
     this.update({ status: "idle" });
+  }
+
+  private formatResultDirect(tool: string, result: any): string {
+    if (result.error) return String(result.error);
+    if (tool === "inventory_register") return result.name + " cadastrado. " + (result.stock || 0) + (result.unit || "g") + " em estoque.";
+    if (tool === "inventory_add") return "+" + result.added + " de " + result.name + ". Total: " + result.newStock + (result.unit || "g") + ".";
+    if (tool === "inventory_remove") return "-" + result.removed + " de " + result.name + ". Restam " + result.newStock + (result.unit || "g") + ".";
+    if (tool === "report_summary") return result.insumos + " insumos, " + result.produtos + " produtos. " + result.alertas + " alertas.";
+    if (tool === "inventory_alert") return result.ok ? "Tudo ok." : (result.empty?.length || 0) + " zerados, " + (result.critical?.length || 0) + " criticos.";
+    return JSON.stringify(result).slice(0, 100);
   }
 
   speak(text: string) {
