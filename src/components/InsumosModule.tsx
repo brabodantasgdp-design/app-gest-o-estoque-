@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Insumo, CurrencyType } from '../types';
 import { insumosService } from '../lib/database';
+import { AddInsumoModal } from './AddInsumoModal';
 
 interface InsumosModuleProps {
   insumos: Insumo[];
@@ -264,71 +265,20 @@ export const InsumosModule: React.FC<InsumosModuleProps> = ({
 
       {/* MODAL: Add New Insumo */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80">
-          <div className="w-full max-w-md bg-[#121214] border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">Novo Insumo</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-zinc-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <input
-                type="text"
-                value={quickName}
-                onChange={(e) => setQuickName(e.target.value)}
-                placeholder="Nome do insumo"
-                className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
-              />
-
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="number"
-                  value={quickQty}
-                  onChange={(e) => setQuickQty(e.target.value)}
-                  placeholder="Qtd"
-                  className="col-span-1 bg-[#1A1A1E] border border-zinc-800 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-amber-500"
-                />
-                <div className="col-span-1 flex bg-[#1A1A1E] border border-zinc-800 rounded-xl overflow-hidden">
-                  {(['g', 'ml', 'un'] as const).map(u => (
-                    <button
-                      key={u}
-                      onClick={() => setQuickUnit(u)}
-                      className={`flex-1 text-xs font-bold ${quickUnit === u ? 'bg-amber-500/20 text-amber-400' : 'text-zinc-500'}`}
-                    >
-                      {u}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={quickCategory}
-                  onChange={(e) => setQuickCategory(e.target.value)}
-                  placeholder="Categoria"
-                  className="col-span-1 bg-[#1A1A1E] border border-zinc-800 rounded-xl p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <input
-                type="number"
-                step="0.01"
-                value={quickPrice}
-                onChange={(e) => setQuickPrice(e.target.value)}
-                placeholder="Custo total (opcional)"
-                className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-3 text-sm text-emerald-400 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <button
-              onClick={handleQuickAddNew}
-              disabled={!quickName || !quickQty}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-sm disabled:opacity-50"
-            >
-              Adicionar
-            </button>
-          </div>
-        </div>
+        <AddInsumoModal
+          isOpen={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onAdd={async (data) => {
+            try {
+              await insumosService.create(data);
+              await onRefresh();
+            } catch (err) {
+              setInsumos([{ ...data, id: `ins-${Date.now()}` }, ...insumos]);
+            }
+          }}
+          currency={currency}
+          activeTenantId={activeTenantId}
+        />
       )}
 
       {/* MODAL: Quick Adjust Stock */}
