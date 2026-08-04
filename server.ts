@@ -2,30 +2,15 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
-import dotenv from "dotenv";
-import { authRoutes } from "./server/routes/auth";
-import { invoiceRoutes } from "./server/routes/invoices";
-import { ocrRoutes } from "./server/routes/ocr";
-import { aiRoutes } from "./server/routes/ai";
-
-dotenv.config();
+import { createApp } from "./server/app";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
-  const app = express();
+  const app = createApp();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "25mb" }));
-
-  // API Routes
-  app.use("/api/auth", authRoutes());
-  app.use("/api/invoices", invoiceRoutes());
-  app.use("/api/ocr-invoice", ocrRoutes());
-  app.use("/api/ebdAi", aiRoutes());
-
-  // Vite Middleware
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
