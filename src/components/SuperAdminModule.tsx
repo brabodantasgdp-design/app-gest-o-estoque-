@@ -22,6 +22,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Tenant, SubscriptionPlan, SubscriptionStatus, CurrencyType } from '../types';
+import { tenantsService } from '../lib/database';
 
 interface SuperAdminModuleProps {
   tenants: Tenant[];
@@ -104,7 +105,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
     setIsModalOpen(true);
   };
 
-  const handleSaveTenant = (e: React.FormEvent) => {
+  const handleSaveTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!storeName || !email) {
       alert('Informe o nome do estabelecimento e o e-mail do proprietário.');
@@ -116,70 +117,75 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
     const expStr = expDate.toISOString().split('T')[0];
 
     if (editingTenant) {
-      // Update
-      const updated = tenants.map((t) =>
-        t.id === editingTenant.id
-          ? {
-              ...t,
-              name: storeName,
-              ownerName,
-              email,
-              password: password || '12345678',
-              cnpjStore: cnpj,
-              plan,
-              status,
-              accessDaysRemaining: accessDays,
-              expirationDate: expStr,
-            }
-          : t
-      );
-      setTenants(updated);
+      try {
+        const updated = await tenantsService.update(editingTenant.id, {
+          name: storeName, ownerName, email, cnpjStore: cnpj, plan, status,
+          accessDaysRemaining: accessDays, expirationDate: expStr,
+        });
+        setTenants(tenants.map((t) => t.id === editingTenant.id ? updated : t));
+      } catch (err) {
+        console.error('Error updating tenant:', err);
+        alert('Erro ao salvar no banco de dados.');
+      }
     } else {
-      // Create new
-      const newTenant: Tenant = {
-        id: `tenant-${Date.now()}`,
-        name: storeName,
-        ownerName,
-        email,
-        password: password || '12345678',
-        cnpjStore: cnpj || '',
-        plan,
-        status,
-        accessDaysRemaining: accessDays,
-        expirationDate: expStr,
-        maxMonthlyScans: plan === 'Enterprise' ? 1000 : plan === 'Pro' ? 300 : 30,
-        scansUsedThisMonth: 0,
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-      setTenants([newTenant, ...tenants]);
+      try {
+        const newTenant = await tenantsService.create({
+          name: storeName, ownerName, email, password: password || '12345678',
+          cnpjStore: cnpj || '', plan, status,
+          accessDaysRemaining: accessDays, expirationDate: expStr,
+          maxMonthlyScans: plan === 'Enterprise' ? 1000 : plan === 'Pro' ? 300 : 30,
+          scansUsedThisMonth: 0,
+        });
+        setTenants([newTenant, ...tenants]);
+      } catch (err) {
+        console.error('Error creating tenant:', err);
+        alert('Erro ao salvar no banco de dados.');
+      }
     }
 
     setIsModalOpen(false);
   };
 
-  const handleDeleteTenant = (id: string, name: string) => {
+  const handleDeleteTenant = async (id: string, name: string) => {
     if (confirm(`Tem certeza que deseja excluir o cliente "${name}" e todos os seus dados?`)) {
-      setTenants(tenants.filter((t) => t.id !== id));
+      try {
+        await tenantsService.delete(id);
+        setTenants(tenants.filter((t) => t.id !== id));
+      } catch (err) {
+        console.error('Error deleting tenant:', err);
+        alert('Erro ao excluir no banco de dados.');
+      }
     }
   };
 
-  const handleQuickAddDays = (id: string, daysToAdd: number) => {
-    setTenants(
-      tenants.map((t) => {
-        if (t.id === id) {
-          const newDays = t.accessDaysRemaining + daysToAdd;
-          const expDate = new Date();
-          expDate.setDate(expDate.getDate() + newDays);
-          return {
-            ...t,
-            accessDaysRemaining: newDays,
-            expirationDate: expDate.toISOString().split('T')[0],
-            status: 'Ativo' as SubscriptionStatus,
-          };
-        }
-        return t;
-      })
-    );
+  const handleQuickAddDays = async (id: string, daysToAdd: number) => {
+    const tenant = tenants.find(t => t.id === id);
+    if (!tenant) return;
+    const newDays = tenant.accessDaysRemaining + daysToAdd;
+    const expDate = new Date();
+    expDate.setDate(expDate.getDate() + newDays);
+    try {
+      await tenantsService.update(id, {
+        accessDaysRemaining: newDays,
+        expirationDate: expDate.toISOString().split('T')[0],
+        status: 'Ativo',
+      });
+      setTenants(
+        tenants.map((t) => {
+          if (t.id === id) {
+            return {
+              ...t,
+              accessDaysRemaining: newDays,
+              expirationDate: expDate.toISOString().split('T')[0],
+              status: 'Ativo' as SubscriptionStatus,
+            };
+          }
+          return t;
+        })
+      );
+    } catch (err) {
+      console.error('Error updating tenant days:', err);
+    }
   };
 
   return (

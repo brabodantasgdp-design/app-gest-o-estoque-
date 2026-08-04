@@ -64,13 +64,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!currentUser || currentUser.role !== 'super_admin') return;
+    if (!currentUser) return;
     const loadTenants = async () => {
       try {
         const data = await tenantsService.getAll();
-        setTenants(data);
+        if (data.length === 0 && currentUser.tenantId) {
+          setTenants([{
+            id: currentUser.tenantId,
+            name: currentUser.tenantName || 'Minha Loja',
+            ownerName: currentUser.name,
+            email: currentUser.email,
+            cnpjStore: '',
+            plan: 'Pro' as const,
+            status: 'Ativo' as const,
+            accessDaysRemaining: 30,
+            expirationDate: '',
+            maxMonthlyScans: 30,
+            scansUsedThisMonth: 0,
+            createdAt: '',
+          }]);
+        } else {
+          setTenants(data);
+        }
       } catch (err) {
         console.error('Error loading tenants:', err);
+        if (currentUser.tenantId) {
+          setTenants([{
+            id: currentUser.tenantId,
+            name: currentUser.tenantName || 'Minha Loja',
+            ownerName: currentUser.name,
+            email: currentUser.email,
+            cnpjStore: '',
+            plan: 'Pro' as const,
+            status: 'Ativo' as const,
+            accessDaysRemaining: 30,
+            expirationDate: '',
+            maxMonthlyScans: 30,
+            scansUsedThisMonth: 0,
+            createdAt: '',
+          }]);
+        }
       }
     };
     loadTenants();

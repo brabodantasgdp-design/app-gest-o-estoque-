@@ -195,10 +195,10 @@ export const fichasService = {
     }).select().single();
     if (fichaError) throw fichaError;
 
+    const insumoCostMap: Record<string, number> = {};
     if (ingredients.length > 0) {
       const insumoIds = ingredients.map(ing => ing.insumoId);
       const { data: insumosData } = await supabase.from('insumos').select('id, unit_cost').in('id', insumoIds);
-      const insumoCostMap: Record<string, number> = {};
       (insumosData || []).forEach((ins: any) => { insumoCostMap[ins.id] = ins.unit_cost; });
 
       const { error: ingError } = await supabase.from('recipe_ingredients').insert(ingredients.map(ing => ({
@@ -209,7 +209,11 @@ export const fichasService = {
       if (ingError) throw ingError;
     }
 
-    return mapFicha({ ...fichaData, recipe_ingredients: ingredients.map((ing, i) => ({ ...ing, id: `temp-${i}`, ficha_tecnica_id: fichaData.id })) });
+    return mapFicha({ ...fichaData, recipe_ingredients: ingredients.map((ing, i) => ({
+      id: `temp-${i}`, ficha_tecnica_id: fichaData.id,
+      insumo_id: ing.insumoId, insumo_name: ing.insumoName,
+      quantity: ing.quantity, unit: ing.unit, calculated_cost: ing.quantity * (insumoCostMap[ing.insumoId] || 0),
+    })) });
   },
   async update(id: string, updates: Partial<FichaTecnica>) {
     if (!isConfigured) throw new Error('Supabase not configured');
