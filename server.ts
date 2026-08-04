@@ -244,8 +244,8 @@ async function startServer() {
         name: email ? email.split("@")[0] : "Lojista Pro",
         email: email || "dono@loja.com.br",
         role: "store_owner",
-        tenantId: tenants?.[0]?.id || "tenant-1",
-        tenantName: tenants?.[0]?.name || "Loja Demo",
+        tenantId: "tenant-1",
+        tenantName: "Loja Demo",
       },
       token: "jwt_demo_token_000"
     });

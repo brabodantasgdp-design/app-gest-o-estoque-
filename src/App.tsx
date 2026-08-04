@@ -206,6 +206,7 @@ export default function App() {
         activeTenantId={activeTenantId}
         setActiveTenantId={setActiveTenantId}
         onOpenSuperAdmin={() => setActiveTab('super_admin')}
+        currentUser={currentUser}
       />
 
       {/* User Session Bar */}

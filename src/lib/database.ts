@@ -270,10 +270,22 @@ export const fichasService = {
       .select()
       .single();
 
-    if (fichaError) throw fichaData;
+    if (fichaError) throw fichaError;
 
     // Inserir ingredientes
     if (ingredients.length > 0) {
+      // Fetch insumo costs to calculate properly
+      const insumoIds = ingredients.map(ing => ing.insumoId);
+      const { data: insumosData } = await supabase
+        .from('insumos')
+        .select('id, unit_cost')
+        .in('id', insumoIds);
+
+      const insumoCostMap: Record<string, number> = {};
+      (insumosData || []).forEach((ins: any) => {
+        insumoCostMap[ins.id] = ins.unit_cost;
+      });
+
       const { error: ingError } = await supabase
         .from('recipe_ingredients')
         .insert(ingredients.map(ing => ({
@@ -282,7 +294,7 @@ export const fichasService = {
           insumo_name: ing.insumoName,
           quantity: ing.quantity,
           unit: ing.unit,
-          calculated_cost: ing.quantity * (ing.unit || 0),
+          calculated_cost: ing.quantity * (insumoCostMap[ing.insumoId] || 0),
         })));
 
       if (ingError) throw ingError;

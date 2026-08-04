@@ -1,6 +1,6 @@
 import React from 'react';
 import { Search, Bell, Mail, Command, Sparkles, Store, ShieldCheck } from 'lucide-react';
-import { CurrencyType, Tenant } from '../types';
+import { CurrencyType, Tenant, User } from '../types';
 
 interface HeaderProps {
   currency: CurrencyType;
@@ -12,6 +12,7 @@ interface HeaderProps {
   activeTenantId: string;
   setActiveTenantId: (id: string) => void;
   onOpenSuperAdmin: () => void;
+  currentUser?: User;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTenantId,
   setActiveTenantId,
   onOpenSuperAdmin,
+  currentUser,
 }) => {
   const currentTenant = tenants.find((t) => t.id === activeTenantId);
 
@@ -121,8 +123,8 @@ export const Header: React.FC<HeaderProps> = ({
             className="w-8 h-8 rounded-xl object-cover ring-2 ring-amber-500/20"
           />
           <div className="hidden lg:block text-left">
-            <div className="text-xs font-bold text-white leading-tight">Super Admin</div>
-            <div className="text-[10px] text-amber-400 font-bold">Dono do Sistema SaaS</div>
+            <div className="text-xs font-bold text-white leading-tight">{currentUser?.name || 'Super Admin'}</div>
+            <div className="text-[10px] text-amber-400 font-bold">{currentUser?.role === 'super_admin' ? 'Dono do Sistema SaaS' : 'Lojista'}</div>
           </div>
         </div>
 
