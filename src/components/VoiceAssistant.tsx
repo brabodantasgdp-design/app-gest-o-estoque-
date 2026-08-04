@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Mic, MicOff, X, Check, AlertCircle, Volume2, VolumeX, Zap, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Mic, MicOff, X, Check, AlertCircle, Volume2, VolumeX, Zap, MessageCircle, Minimize2, Maximize2 } from 'lucide-react';
 import { useVoiceRecognition } from '../hooks/useVoiceRecognition';
 import { processVoiceCommand, CommandResult } from '../services/voiceService';
 import { 
@@ -56,10 +56,20 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   const [history, setHistory] = useState<Array<{ time: Date; input: string; response: string }>>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [conversationMode, setConversationMode] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   
   // Conversation state
   const [conversation, setConversation] = useState<ConversationState | null>(null);
   const [conversationHistory, setConversationHistory] = useState<string[]>([]);
+  
+  // Auto-scroll
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (historyRef.current) {
+      historyRef.current.scrollTop = historyRef.current.scrollHeight;
+    }
+  }, [history, conversationHistory]);
 
   useEffect(() => {
     if (transcript && !isListening && !isProcessing) {
@@ -88,13 +98,12 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         
         if (response.state === null) {
           // Conversation finished - execute the action
+          const data = conversation.data;
           setConversation(null);
           
-          // Parse and execute based on conversation data
-          const data = conversation.data;
-          if (data.name && data.quantity !== undefined) {
-            // Create insumo
-            try {
+          try {
+            if (data.name && data.quantity !== undefined && !data.customer) {
+              // Create insumo
               await insumosService.create({
                 tenantId: activeTenantId,
                 code: `INS-${Math.floor(100 + Math.random() * 900)}`,
@@ -108,12 +117,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                 lastUpdated: new Date().toISOString().split('T')[0],
               });
               await onRefresh();
-            } catch (err) {
-              console.error('Error creating insumo:', err);
-            }
-          } else if (data.name && data.price !== undefined) {
-            // Create product
-            try {
+            } else if (data.name && data.price !== undefined) {
+              // Create product
               await productsService.create({
                 tenantId: activeTenantId,
                 name: data.name,
@@ -126,12 +131,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                 createdAt: new Date().toISOString(),
               } as any);
               await onRefresh();
-            } catch (err) {
-              console.error('Error creating product:', err);
-            }
-          } else if (data.customer && data.product) {
-            // Create order
-            try {
+            } else if (data.customer && data.product) {
+              // Create order
               const prod = products.find(p => p.name.toLowerCase().includes(data.product.toLowerCase()));
               if (prod) {
                 await ordersService.create({
@@ -144,9 +145,9 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                 } as any);
                 await onRefresh();
               }
-            } catch (err) {
-              console.error('Error creating order:', err);
             }
+          } catch (err) {
+            console.error('Error executing:', err);
           }
           
           setResult({ action: 'success', response: response.message, success: true });
@@ -189,7 +190,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         return;
       }
 
-      // Otherwise, process as direct command
+      // Direct command
       const context = { insumos, products, orders, fichas, invoices, tenant };
       const commandResult = await processVoiceCommand(text, context, {
         navigate: onNavigate,
@@ -287,153 +288,190 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     }
   };
 
-  const handleCancelConversation = () => {
-    setConversation(null);
-    setConversationHistory([]);
-    setResult({ action: 'cancelled', response: 'Conversa cancelada.', success: false });
-  };
-
   if (!isOpen) return null;
 
+  // MINIMIZED VIEW - Floating widget
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-20 lg:bottom-6 right-4 z-50 flex flex-col items-end gap-2">
+        {/* Result toast */}
+        {result && (
+          <div className={`max-w-xs p-2 rounded-lg text-[10px] shadow-lg animate-in slide-in-from-right ${
+            result.success 
+              ? 'bg-emerald-500/90 text-white' 
+              : 'bg-red-500/90 text-white'
+          }`}>
+            {result.response}
+          </div>
+        )}
+        
+        {/* Conversation indicator */}
+        {conversation && (
+          <div className="max-w-xs p-2 rounded-lg bg-amber-500/90 text-black text-[10px] shadow-lg">
+            💭 {conversationHistory[conversationHistory.length - 1]?.replace('AI: ', '') || 'Aguardando...'}
+          </div>
+        )}
+        
+        {/* Main floating button */}
+        <div className="flex items-center gap-2">
+          {isListening && (
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+          )}
+          <button
+            onClick={() => setIsMinimized(false)}
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${
+              conversationMode 
+                ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/30' 
+                : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-orange-500/30'
+            }`}
+          >
+            {conversationMode ? (
+              <MicOff className="w-6 h-6 text-white" />
+            ) : (
+              <Mic className="w-6 h-6 text-white" />
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // FULL VIEW - Side panel
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/90 backdrop-blur-md">
-      <div className="w-full max-w-md bg-[#121214] border border-zinc-800 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+    <div className="fixed right-0 top-0 bottom-0 w-full sm:w-96 z-50 flex">
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/50 backdrop-blur-sm lg:hidden" onClick={onClose} />
+      
+      {/* Panel */}
+      <div className="w-full sm:w-96 bg-[#121214] border-l border-zinc-800 flex flex-col shadow-2xl">
         
         {/* Header */}
-        <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between flex-shrink-0 bg-[#18181b]">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500">
-              <Zap className="w-4 h-4 text-black" />
+        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between bg-[#18181b] flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500">
+              <Zap className="w-3.5 h-3.5 text-black" />
             </div>
             <div>
-              <h3 className="text-sm font-extrabold text-white">EBD AI</h3>
-              <p className="text-[10px] text-zinc-500">
-                {conversation ? '💭 Em conversa...' : conversationMode ? '🔴 Conversando...' : 'Toque pra falar'}
+              <h3 className="text-xs font-extrabold text-white">EBD AI</h3>
+              <p className="text-[9px] text-zinc-500">
+                {conversation ? '💭 Conversando...' : isListening ? '🔴 Ouvindo...' : 'Pronto'}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2 text-zinc-400 hover:text-white rounded-lg">
-              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          <div className="flex items-center gap-1">
+            <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 text-zinc-400 hover:text-white rounded">
+              {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             </button>
-            <button onClick={() => { setConversationMode(false); setConversation(null); stopListening(); onClose(); }} className="p-2 text-zinc-400 hover:text-white rounded-lg">
-              <X className="w-4 h-4" />
+            <button onClick={() => setIsMinimized(true)} className="p-1.5 text-zinc-400 hover:text-white rounded">
+              <Minimize2 className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => { setConversationMode(false); setConversation(null); stopListening(); onClose(); }} className="p-1.5 text-zinc-400 hover:text-white rounded">
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        {/* Main */}
-        <div className="p-5 overflow-y-auto flex-1">
-          
-          {/* Conversation Mode Indicator */}
-          {conversation && (
-            <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <MessageCircle className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold text-amber-400">Modo Conversa</span>
-                <button onClick={handleCancelConversation} className="ml-auto text-[10px] text-zinc-400 hover:text-red-400">
-                  Cancelar
-                </button>
-              </div>
-              <div className="space-y-1 max-h-24 overflow-y-auto">
-                {conversationHistory.map((msg, i) => (
-                  <p key={i} className={`text-[10px] ${msg.startsWith('AI:') ? 'text-amber-300' : 'text-zinc-400'}`}>
-                    {msg}
-                  </p>
-                ))}
-              </div>
+        {/* Conversation Area */}
+        {conversation && (
+          <div className="px-4 py-2 border-b border-zinc-800 bg-amber-500/5">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[9px] font-bold text-amber-400">MODO CONVERSA</span>
+              <button onClick={() => { setConversation(null); setConversationHistory([]); }} className="text-[9px] text-zinc-400 hover:text-red-400">
+                Cancelar
+              </button>
             </div>
-          )}
+            <div className="space-y-0.5 max-h-20 overflow-y-auto" ref={historyRef}>
+              {conversationHistory.map((msg, i) => (
+                <p key={i} className={`text-[10px] ${msg.startsWith('AI:') ? 'text-amber-300' : 'text-zinc-400'}`}>
+                  {msg}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
 
+        {/* Main Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          
           {/* Mic Button */}
-          <div className="flex justify-center mb-5">
+          <div className="flex justify-center">
             <button
               onClick={handleMicPress}
-              className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
+              className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
                 conversationMode 
                   ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-lg shadow-red-500/30 animate-pulse' 
                   : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-lg shadow-orange-500/20 hover:scale-105'
               }`}
             >
               {conversationMode ? (
-                <MicOff className="w-10 h-10 text-white" />
+                <MicOff className="w-8 h-8 text-white" />
               ) : (
-                <Mic className="w-10 h-10 text-white" />
+                <Mic className="w-8 h-8 text-white" />
               )}
             </button>
           </div>
 
           {/* Status */}
-          <div className="text-center mb-4">
+          <div className="text-center">
             {isListening && !isProcessing && (
               <div>
                 <p className="text-xs font-bold text-amber-400 animate-pulse">Ouvindo...</p>
                 {interimTranscript && (
-                  <p className="text-xs text-zinc-400 mt-1 italic truncate">"{interimTranscript}"</p>
+                  <p className="text-[10px] text-zinc-400 mt-1 italic truncate">"{interimTranscript}"</p>
                 )}
               </div>
             )}
-            
-            {isProcessing && (
-              <p className="text-xs font-bold text-blue-400">Processando...</p>
-            )}
-            
-            {isSpeaking && (
-              <p className="text-xs font-bold text-emerald-400">Falando...</p>
-            )}
-            
+            {isProcessing && <p className="text-xs font-bold text-blue-400">Processando...</p>}
+            {isSpeaking && <p className="text-xs font-bold text-emerald-400">Falando...</p>}
             {!isListening && !isProcessing && !isSpeaking && !result && !conversation && (
-              <p className="text-[11px] text-zinc-500">
-                {conversationMode ? 'Diga algo!' : 'Toque e fale um comando'}
-              </p>
+              <p className="text-[10px] text-zinc-500">Toque e fale um comando</p>
             )}
           </div>
 
           {/* Result */}
           {result && !conversation && (
-            <div className={`p-3 rounded-xl mb-4 flex items-start gap-2 ${
+            <div className={`p-2.5 rounded-lg flex items-start gap-2 text-xs ${
               result.success 
-                ? 'bg-emerald-500/10 border border-emerald-500/20' 
-                : 'bg-red-500/10 border border-red-500/20'
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' 
+                : 'bg-red-500/10 border border-red-500/20 text-red-300'
             }`}>
-              {result.success ? (
-                <Check className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-              )}
-              <p className={`text-xs font-medium ${result.success ? 'text-emerald-300' : 'text-red-300'}`}>
-                {result.response}
-              </p>
+              {result.success ? <Check className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />}
+              <span>{result.response}</span>
             </div>
           )}
 
           {/* Quick Actions */}
           {!conversation && (
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button onClick={() => handleProcessCommand('Criar insumo')} className="p-2 rounded-lg bg-[#1A1A1E] border border-zinc-800 text-[10px] text-zinc-400 hover:text-white text-left">
-                📦 Criar insumo
-              </button>
-              <button onClick={() => handleProcessCommand('Criar produto')} className="p-2 rounded-lg bg-[#1A1A1E] border border-zinc-800 text-[10px] text-zinc-400 hover:text-white text-left">
-                🏷️ Criar produto
-              </button>
-              <button onClick={() => handleProcessCommand('Criar pedido')} className="p-2 rounded-lg bg-[#1A1A1E] border border-zinc-800 text-[10px] text-zinc-400 hover:text-white text-left">
-                🛒 Criar pedido
-              </button>
-              <button onClick={() => handleProcessCommand('Abrir dashboard')} className="p-2 rounded-lg bg-[#1A1A1E] border border-zinc-800 text-[10px] text-zinc-400 hover:text-white text-left">
-                📊 Dashboard
-              </button>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { label: 'Criar insumo', cmd: 'Criar insumo', icon: '📦' },
+                { label: 'Criar produto', cmd: 'Criar produto', icon: '🏷️' },
+                { label: 'Criar pedido', cmd: 'Criar pedido', icon: '🛒' },
+                { label: 'Dashboard', cmd: 'Abrir dashboard', icon: '📊' },
+                { label: 'Insumos', cmd: 'Abrir insumos', icon: '📦' },
+                { label: 'Produtos', cmd: 'Abrir produtos', icon: '🏷️' },
+              ].map((item) => (
+                <button 
+                  key={item.cmd}
+                  onClick={() => handleProcessCommand(item.cmd)} 
+                  className="p-2 rounded-lg bg-[#1A1A1E] border border-zinc-800 text-[10px] text-zinc-400 hover:text-white hover:border-zinc-700 text-left flex items-center gap-1.5"
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              ))}
             </div>
           )}
 
           {/* History */}
           {history.length > 0 && (
             <div>
-              <p className="text-[9px] font-bold text-zinc-600 uppercase mb-1.5">Histórico</p>
-              <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              <p className="text-[9px] font-bold text-zinc-600 uppercase mb-1">Histórico</p>
+              <div className="space-y-1 max-h-32 overflow-y-auto" ref={historyRef}>
                 {history.map((item, index) => (
-                  <div key={index} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-zinc-900">
-                    <span className="text-zinc-400 truncate flex-1">{item.input}</span>
-                    <span className="text-zinc-600">{item.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <div key={index} className="text-[10px] p-1.5 rounded bg-zinc-900">
+                    <span className="text-zinc-400">{item.input}</span>
+                    <span className="text-zinc-600 ml-2">{item.time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                 ))}
               </div>
