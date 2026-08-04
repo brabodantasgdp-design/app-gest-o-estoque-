@@ -53,6 +53,66 @@ export const authService = {
     }
 
     try {
+      // Super admin: ensure tenant exists
+      if (email === 'brabo.dantas.gdp@gmail.com') {
+        // Check or create tenant
+        let { data: tenant } = await supabase
+          .from(TABLES.TENANT)
+          .select('id')
+          .limit(1)
+          .single();
+
+        if (!tenant) {
+          const { data: newTenant } = await supabase.from(TABLES.TENANT).insert({
+            name: 'Loja Principal',
+            owner_name: 'Brabo Dantas',
+            email: email,
+            plan: 'Pro',
+            status: 'Ativo',
+            access_days_remaining: 9999,
+            max_monthly_scans: 9999,
+          }).select().single();
+          tenant = newTenant;
+        }
+
+        // Check or create user
+        let { data: user } = await supabase
+          .from(TABLES.USER)
+          .select('*')
+          .eq('email', email)
+          .single();
+
+        if (!user) {
+          const { data: newUser } = await supabase.from(TABLES.USER).insert({
+            name: 'Brabo Dantas',
+            email: email,
+            role: 'super_admin',
+            tenant_id: tenant?.id,
+          }).select().single();
+          user = newUser;
+        } else if (tenant && !user.tenant_id) {
+          await supabase.from(TABLES.USER).update({ tenant_id: tenant.id }).eq('id', user.id);
+          user.tenant_id = tenant.id;
+        }
+
+        if (user && tenant) {
+          return {
+            success: true,
+            user: {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              tenantId: tenant.id,
+              tenantName: 'Loja Principal',
+            }
+          };
+        }
+
+        return { success: false, message: 'Erro ao configurar super admin' };
+      }
+
+      // Regular user lookup
       const { data: user, error } = await supabase
         .from(TABLES.USER)
         .select('*')
@@ -63,18 +123,15 @@ export const authService = {
         return { success: false, message: 'Usuario nao encontrado' };
       }
 
-      try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (authError) {
-          // Auth not set up, allow direct login
-          console.warn('Supabase Auth not configured, using direct lookup');
-        }
-      } catch (_) {
-        console.warn('Supabase Auth not available, using direct lookup');
+      // Get tenant name
+      let tenantName = '';
+      if (user.tenant_id) {
+        const { data: tenant } = await supabase
+          .from(TABLES.TENANT)
+          .select('name')
+          .eq('id', user.tenant_id)
+          .single();
+        tenantName = tenant?.name || '';
       }
 
       return {
@@ -85,7 +142,7 @@ export const authService = {
           email: user.email,
           role: user.role,
           tenantId: user.tenant_id,
-          tenantName: '',
+          tenantName,
         }
       };
     } catch (err) {
@@ -214,6 +271,7 @@ export const tenantsService = {
 // ============================================
 export const insumosService = {
   async getAll(tenantId: string) {
+    console.log('[DB] insumosService.getAll tenantId:', tenantId, 'isConfigured:', isConfigured);
     if (!isConfigured) return loadLocal<Insumo>('ebd_insumos').filter(i => i.tenantId === tenantId);
     try {
       const { data, error } = await supabase
@@ -221,7 +279,11 @@ export const insumosService = {
         .select('*')
         .eq('tenant_id', tenantId)
         .order('name');
-      if (error) throw error;
+      if (error) {
+        console.error('[DB] insumosService.getAll ERROR:', JSON.stringify(error));
+        throw error;
+      }
+      console.log('[DB] insumosService.getAll raw data:', data?.length, 'rows');
       return (data || []).map(i => ({
         id: i.id,
         tenantId: i.tenant_id,
@@ -236,7 +298,7 @@ export const insumosService = {
         lastUpdated: i.last_updated,
       })) as Insumo[];
     } catch (err) {
-      console.error('insumosService.getAll error:', err);
+      console.error('[DB] insumosService.getAll catch:', err);
       return loadLocal<Insumo>('ebd_insumos').filter(i => i.tenantId === tenantId);
     }
   },
@@ -246,13 +308,19 @@ export const insumosService = {
   },
 
   async create(insumo: Omit<Insumo, 'id'>) {
+    console.log('[DB] isConfigured:', isConfigured);
+    console.log('[DB] Creating insumo:', insumo.name);
+    
     if (!isConfigured) {
+      console.log('[DB] Supabase not configured, saving to localStorage');
       const local = { ...insumo, id: genId() } as Insumo;
       const all = loadLocal<Insumo>('ebd_insumos');
       all.push(local);
       saveLocal('ebd_insumos', all);
       return local;
     }
+    
+    console.log('[DB] Inserting to Supabase table:', TABLES.INSUMO);
     const { data, error } = await supabase.from(TABLES.INSUMO).insert({
       tenant_id: insumo.tenantId,
       code: insumo.code,
@@ -265,10 +333,14 @@ export const insumosService = {
       supplier: insumo.supplier,
       last_updated: insumo.lastUpdated,
     }).select().single();
+    
     if (error) {
-      console.error('insumosService.create error:', error);
+      console.error('[DB] INSERT ERROR:', JSON.stringify(error));
+      alert(`Erro Supabase: ${error.message}\nCode: ${error.code}\nDetails: ${error.details}`);
       throw error;
     }
+    
+    console.log('[DB] Insert SUCCESS:', data);
     return data;
   },
 

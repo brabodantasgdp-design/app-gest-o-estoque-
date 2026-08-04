@@ -140,6 +140,12 @@ export default function App() {
   const tenantOrders = useMemo(() => allOrders, [allOrders]);
   const tenantInvoices = useMemo(() => allInvoices, [allInvoices]);
 
+  useEffect(() => {
+    if (!activeTenantId && tenants.length > 0) {
+      setActiveTenantId(tenants[0].id);
+    }
+  }, [tenants, activeTenantId]);
+
   const currentTenant = tenants.find((t) => t.id === activeTenantId) || null;
   const lowStockCount = tenantInsumos.filter((i) => i.currentStock <= i.minStock).length;
   const isSuperAdmin = currentUser?.role === 'super_admin';
