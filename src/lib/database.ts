@@ -1,4 +1,5 @@
 import { supabase, isConfigured } from './supabase';
+import { createClient } from '@supabase/supabase-js';
 import type { Tenant, Insumo, FichaTecnica, Product, Order, InvoiceScan, User, RecipeItem } from '../types';
 
 // ============================================
@@ -821,7 +822,12 @@ export const usersService = {
       saveLocal('ebd_users', all);
       return u;
     }
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const authClient = createClient(
+      import.meta.env.VITE_SUPABASE_URL,
+      import.meta.env.VITE_SUPABASE_ANON_KEY,
+      { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
+    );
+    const { data: authData, error: authError } = await authClient.auth.signUp({
       email: user.email,
       password: user.password,
     });
@@ -835,7 +841,6 @@ export const usersService = {
       tenant_id: user.tenant_id,
     }).select().single();
     if (error) throw error;
-    await supabase.auth.signOut();
     return data;
   },
 
