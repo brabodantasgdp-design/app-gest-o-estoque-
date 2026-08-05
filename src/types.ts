@@ -22,7 +22,6 @@ export interface Tenant {
   name: string;
   ownerName: string;
   email: string;
-  password?: string;
   cnpjStore: string;
   plan: SubscriptionPlan;
   status: SubscriptionStatus;

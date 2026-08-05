@@ -1,3 +1,6 @@
 {
-  "rewrites": [{ "source": "/api/ebdAi/agent", "destination": "/api/index" }]
+  "rewrites": [
+    { "source": "/api/ebdAi/agent", "destination": "/api/index" },
+    { "source": "/api/admin/stores", "destination": "/api/index" }
+  ]
 }

@@ -208,4 +208,4 @@ CREATE INDEX invoices_tenant_idx ON invoices(tenant_id);
 CREATE INDEX users_tenant_idx ON users(tenant_id);
 
 -- Apos executar este arquivo, crie o super admin em Authentication > Users
--- usando o email definido pelo proprietário. O app cria o perfil public.users no primeiro login.
+-- e insira o mesmo id em public.users com role = 'super_admin' e tenant_id = NULL.

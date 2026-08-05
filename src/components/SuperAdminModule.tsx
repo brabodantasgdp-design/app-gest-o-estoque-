@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   ShieldAlert,
   Users,
@@ -13,7 +13,6 @@ import {
   Clock,
   Sparkles,
   Search,
-  Key,
   ShieldCheck,
   UserCheck,
   Power,
@@ -23,7 +22,6 @@ import {
 } from 'lucide-react';
 import { Tenant, SubscriptionPlan, SubscriptionStatus, CurrencyType } from '../types';
 import { tenantsService } from '../lib/database';
-import { usersService } from '../lib/database';
 
 interface SuperAdminModuleProps {
   tenants: Tenant[];
@@ -53,41 +51,6 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
   const [plan, setPlan] = useState<SubscriptionPlan>('Pro');
   const [status, setStatus] = useState<SubscriptionStatus>('Ativo');
   const [accessDays, setAccessDays] = useState<number>(30);
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
-
-  // Users management
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [showUserForm, setShowUserForm] = useState(false);
-  const [newUserName, setNewUserName] = useState('');
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserPassword, setNewUserPassword] = useState('');
-  const [newUserRole, setNewUserRole] = useState('store_owner');
-  const [newUserTenant, setNewUserTenant] = useState('');
-
-  useEffect(() => { usersService.getAll().then(setAllUsers).catch(() => {}); }, []);
-
-  const handleAddUser = async () => {
-    if (!newUserName || !newUserEmail || !newUserPassword || !newUserTenant) {
-      alert('Informe nome, email, senha e loja.');
-      return;
-    }
-    try {
-      await usersService.create({
-        name: newUserName, email: newUserEmail, password: newUserPassword,
-        role: newUserRole, tenant_id: newUserTenant,
-      });
-      setNewUserName(''); setNewUserEmail(''); setNewUserPassword('');
-      setShowUserForm(false);
-      const updated = await usersService.getAll();
-      setAllUsers(updated);
-    } catch (e: any) { alert(e.message); }
-  };
-
-  const handleDeleteUser = async (id: string) => {
-    if (!confirm('Remover este usuario?')) return;
-    await usersService.delete(id);
-    setAllUsers((prev) => prev.filter((u) => u.id !== id));
-  };
 
   const formatCurrency = (val: number) => {
     if (currency === 'BRL') return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
@@ -117,7 +80,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
     setStoreName('');
     setOwnerName('');
     setEmail('');
-    setPassword('lojista123');
+    setPassword('');
     setCnpj('');
     setPlan('Pro');
     setStatus('Ativo');
@@ -130,7 +93,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
     setStoreName(t.name);
     setOwnerName(t.ownerName);
     setEmail(t.email);
-    setPassword(t.password || '12345678');
+    setPassword('');
     setCnpj(t.cnpjStore || '');
     setPlan(t.plan);
     setStatus(t.status);
@@ -162,8 +125,8 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
       }
     } else {
       try {
-        const newTenant = await tenantsService.create({
-           name: storeName, ownerName, email: email || `loja-${Date.now()}@local.invalid`, password: password || '',
+         const newTenant = await tenantsService.createWithOwner({
+           name: storeName, ownerName, email, password,
           cnpjStore: cnpj || '', plan, status,
           accessDaysRemaining: accessDays, expirationDate: expStr,
           maxMonthlyScans: plan === 'Enterprise' ? 1000 : plan === 'Pro' ? 300 : 30,
@@ -358,17 +321,9 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
                       </div>
                       <div className="text-[10px] text-zinc-400 mt-0.5 flex items-center gap-2 flex-wrap">
                         <span>{t.ownerName} ({t.email}){t.cnpjStore ? ` | CNPJ/CPF: ${t.cnpjStore}` : ''}</span>
-                        <span className="inline-flex items-center gap-1 bg-zinc-800 text-amber-400 px-1.5 py-0.5 rounded font-mono text-[9px] border border-zinc-700">
-                          <Key className="w-2.5 h-2.5" />
-                          <span>Senha: {visiblePasswords[t.id] ? (t.password || 'padaria123') : '••••••••'}</span>
-                          <button
-                            type="button"
-                            onClick={() => setVisiblePasswords(prev => ({ ...prev, [t.id]: !prev[t.id] }))}
-                            className="text-zinc-400 hover:text-white ml-1 underline cursor-pointer"
-                          >
-                            {visiblePasswords[t.id] ? 'Ocultar' : 'Ver'}
-                          </button>
-                        </span>
+                         <span className="inline-flex items-center gap-1 bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded text-[9px] border border-zinc-700">
+                           Login do proprietário
+                         </span>
                       </div>
                     </td>
 
@@ -456,7 +411,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
         </div>
       </div>
 
-      {/* CREATE / EDIT TENANT MODAL */}
+       {/* CREATE / EDIT TENANT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <form
@@ -490,7 +445,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-zinc-400 font-bold mb-1">Nome do Proprietário</label>
                   <input
@@ -513,6 +468,34 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
                     className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500 font-mono"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-zinc-400 font-bold mb-1">E-mail de login do proprietário</label>
+                  <input
+                    type="email"
+                    required
+                    disabled={Boolean(editingTenant)}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="dono@loja.com.br"
+                    className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500 disabled:opacity-50"
+                  />
+                </div>
+
+                {!editingTenant && (
+                  <div>
+                    <label className="block text-zinc-400 font-bold mb-1">Senha inicial do proprietário</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Mínimo de 6 caracteres"
+                      className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -574,41 +557,6 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
           </form>
         </div>
       )}
-
-      {/* Gestão de usuários fica fora do formulário de loja. */}
-      <div className="mt-8 bg-[#121214] border border-zinc-800/80 rounded-2xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-extrabold text-white flex items-center gap-2"><Users className="w-4 h-4 text-amber-500"/> Usuários</h2>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Vincule cada usuário a uma loja criada.</p>
-          </div>
-          <button type="button" onClick={() => setShowUserForm(!showUserForm)} className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[11px] hover:bg-amber-500/20 flex items-center gap-1 cursor-pointer">
-            <Plus className="w-3 h-3"/> Novo usuário
-          </button>
-        </div>
-        {showUserForm && (
-          <div className="flex flex-wrap gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
-            <input placeholder="Nome" value={newUserName} onChange={e => setNewUserName(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none w-full sm:w-auto"/>
-            <input placeholder="Email de login" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none w-full sm:w-auto"/>
-            <input placeholder="Senha" type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none w-full sm:w-auto"/>
-            <select value={newUserTenant} onChange={e => setNewUserTenant(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none">
-              <option value="">Selecione a loja</option>
-              {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <button type="button" onClick={handleAddUser} className="px-4 py-2 rounded-lg bg-amber-500 text-black font-extrabold text-xs hover:bg-amber-400 cursor-pointer">Criar usuário</button>
-          </div>
-        )}
-        <div className="space-y-2">
-          {allUsers.length === 0 && <div className="text-xs text-zinc-500 text-center py-4">Nenhum usuário cadastrado.</div>}
-          {allUsers.map(u => {
-            const tenant = tenants.find(t => t.id === u.tenant_id);
-            return <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-[#18181b] border border-zinc-800/60 text-xs">
-              <div><div className="text-white font-bold">{u.name}</div><div className="text-zinc-500 text-[10px]">{u.email}</div></div>
-              <div className="flex items-center gap-3"><span className="text-[10px] text-zinc-400">{tenant?.name || 'Sem loja'}</span><button type="button" onClick={() => handleDeleteUser(u.id)} className="text-zinc-600 hover:text-red-400 cursor-pointer"><Trash2 className="w-3 h-3"/></button></div>
-            </div>;
-          })}
-        </div>
-      </div>
 
     </div>
   );

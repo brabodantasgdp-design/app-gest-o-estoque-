@@ -4,6 +4,7 @@ import { authRoutes } from "./routes/auth";
 import { invoiceRoutes } from "./routes/invoices";
 import { ocrRoutes } from "./routes/ocr";
 import { aiRoutes } from "./routes/ai";
+import { adminRoutes } from "./routes/admin";
 
 dotenv.config();
 
@@ -12,6 +13,7 @@ export function createApp() {
   app.use(express.json({ limit: "25mb" }));
 
   app.use("/api/auth", authRoutes());
+  app.use("/api/admin", adminRoutes());
   app.use("/api/invoices", invoiceRoutes());
   app.use("/api/dashboard", invoiceRoutes()); // /api/dashboard alias
   app.use("/api/ocr-invoice", ocrRoutes());

@@ -23,7 +23,6 @@ CREATE TABLE tenants (
   name TEXT NOT NULL,
   owner_name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
-  password_hash TEXT,
   cnpj_store TEXT,
   plan TEXT DEFAULT 'Gratuito' CHECK (plan IN ('Gratuito', 'Pro', 'Enterprise')),
   status TEXT DEFAULT 'Trial' CHECK (status IN ('Ativo', 'Trial', 'Suspenso', 'Cancelado')),
@@ -38,10 +37,9 @@ CREATE TABLE tenants (
 -- 2. USERS (Usuários do sistema)
 -- ============================================
 CREATE TABLE users (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
-  password_hash TEXT,
   role TEXT DEFAULT 'store_owner' CHECK (role IN ('super_admin', 'store_owner', 'employee')),
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT now()
@@ -191,34 +189,7 @@ CREATE TABLE invoice_items (
 );
 
 -- ============================================
--- 11. SUPER ADMIN USER
--- ============================================
--- Criar tenant padrão para o super admin
-INSERT INTO tenants (id, name, owner_name, email, plan, status, access_days_remaining, expiration_date, max_monthly_scans)
-VALUES (
-  '00000000-0000-0000-0000-000000000000',
-  'Painel Global SaaS',
-  'Brabo Dantas',
-  'brabo.dantas.gdp@gmail.com',
-  'Enterprise',
-  'Ativo',
-  9999,
-  '2030-12-31',
-  99999
-);
-
--- Criar super admin user
-INSERT INTO users (id, name, email, role, tenant_id)
-VALUES (
-  '00000000-0000-0000-0000-000000000001',
-  'Brabo Dantas',
-  'brabo.dantas.gdp@gmail.com',
-  'super_admin',
-  '00000000-0000-0000-0000-000000000000'
-);
-
--- ============================================
--- 12. RLS (Row Level Security)
+-- 11. RLS (Row Level Security)
 -- ============================================
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -231,27 +202,31 @@ ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invoice_items ENABLE ROW LEVEL SECURITY;
 
--- Super admin pode ver tudo
-CREATE POLICY "Super admin full access" ON tenants FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON users FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON insumos FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON fichas_tecnicas FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON recipe_ingredients FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON products FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON orders FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON order_items FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON invoices FOR ALL USING (true);
-CREATE POLICY "Super admin full access" ON invoice_items FOR ALL USING (true);
+CREATE OR REPLACE FUNCTION public.is_super_admin() RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'super_admin') $$;
 
--- Usuários veem apenas seus próprios dados (tenant isolation)
-CREATE POLICY "Tenant isolation" ON insumos FOR ALL USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
-CREATE POLICY "Tenant isolation" ON fichas_tecnicas FOR ALL USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
-CREATE POLICY "Tenant isolation" ON products FOR ALL USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
-CREATE POLICY "Tenant isolation" ON orders FOR ALL USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
-CREATE POLICY "Tenant isolation" ON invoices FOR ALL USING (tenant_id = (SELECT tenant_id FROM users WHERE id = auth.uid()));
+CREATE OR REPLACE FUNCTION public.my_tenant_id() RETURNS UUID
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT tenant_id FROM public.users WHERE id = auth.uid() $$;
+
+CREATE POLICY "Users self or superadmin" ON users FOR SELECT USING (id = auth.uid() OR public.is_super_admin());
+CREATE POLICY "Users managed by superadmin" ON users FOR INSERT WITH CHECK (public.is_super_admin());
+CREATE POLICY "Users updated by superadmin" ON users FOR UPDATE USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+CREATE POLICY "Users deleted by superadmin" ON users FOR DELETE USING (public.is_super_admin());
+CREATE POLICY "Tenants visible to member or superadmin" ON tenants FOR SELECT USING (public.is_super_admin() OR id = public.my_tenant_id());
+CREATE POLICY "Tenants managed by superadmin" ON tenants FOR ALL USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
+CREATE POLICY "Insumos tenant isolation" ON insumos FOR ALL USING (public.is_super_admin() OR tenant_id = public.my_tenant_id()) WITH CHECK (public.is_super_admin() OR tenant_id = public.my_tenant_id());
+CREATE POLICY "Fichas tenant isolation" ON fichas_tecnicas FOR ALL USING (public.is_super_admin() OR tenant_id = public.my_tenant_id()) WITH CHECK (public.is_super_admin() OR tenant_id = public.my_tenant_id());
+CREATE POLICY "Products tenant isolation" ON products FOR ALL USING (public.is_super_admin() OR tenant_id = public.my_tenant_id()) WITH CHECK (public.is_super_admin() OR tenant_id = public.my_tenant_id());
+CREATE POLICY "Orders tenant isolation" ON orders FOR ALL USING (public.is_super_admin() OR tenant_id = public.my_tenant_id()) WITH CHECK (public.is_super_admin() OR tenant_id = public.my_tenant_id());
+CREATE POLICY "Invoices tenant isolation" ON invoices FOR ALL USING (public.is_super_admin() OR tenant_id = public.my_tenant_id()) WITH CHECK (public.is_super_admin() OR tenant_id = public.my_tenant_id());
+CREATE POLICY "Recipe tenant isolation" ON recipe_ingredients FOR ALL USING (public.is_super_admin() OR EXISTS (SELECT 1 FROM fichas_tecnicas f WHERE f.id = ficha_tecnica_id AND f.tenant_id = public.my_tenant_id())) WITH CHECK (public.is_super_admin() OR EXISTS (SELECT 1 FROM fichas_tecnicas f WHERE f.id = ficha_tecnica_id AND f.tenant_id = public.my_tenant_id()));
+CREATE POLICY "Order items tenant isolation" ON order_items FOR ALL USING (public.is_super_admin() OR EXISTS (SELECT 1 FROM orders o WHERE o.id = order_id AND o.tenant_id = public.my_tenant_id())) WITH CHECK (public.is_super_admin() OR EXISTS (SELECT 1 FROM orders o WHERE o.id = order_id AND o.tenant_id = public.my_tenant_id()));
+CREATE POLICY "Invoice items tenant isolation" ON invoice_items FOR ALL USING (public.is_super_admin() OR EXISTS (SELECT 1 FROM invoices i WHERE i.id = invoice_id AND i.tenant_id = public.my_tenant_id())) WITH CHECK (public.is_super_admin() OR EXISTS (SELECT 1 FROM invoices i WHERE i.id = invoice_id AND i.tenant_id = public.my_tenant_id()));
 
 -- ============================================
--- 13. INDEXES para performance
+-- 12. INDEXES para performance
 -- ============================================
 CREATE INDEX idx_insumos_tenant ON insumos(tenant_id);
 CREATE INDEX idx_fichas_tenant ON fichas_tecnicas(tenant_id);

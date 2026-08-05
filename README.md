@@ -36,12 +36,22 @@ Sistema completo de gestão de estoque, vendas e inteligência artificial para v
 
 ### Supabase (obrigatório)
 1. Crie um projeto no [Supabase](https://supabase.com)
-2. Execute o SQL em `supabase-schema.sql` no painel do Supabase
+2. Execute o SQL em `scripts/supabase-schema.sql` no painel do Supabase
 3. Adicione as credenciais no `.env.local`:
    ```
    VITE_SUPABASE_URL="https://seu-projeto.supabase.co"
-   VITE_SUPABASE_ANON_KEY="sua-chave-anon"
-   ```
+    VITE_SUPABASE_ANON_KEY="sua-chave-anon"
+    ```
+3. Configure `SUPABASE_SERVICE_ROLE_KEY` somente nas variáveis do servidor/Vercel. Essa chave nunca deve começar com `VITE_`.
+
+O primeiro usuário precisa ser criado em **Supabase > Authentication > Users**. Depois, crie o perfil correspondente em `public.users` com `role = 'super_admin'` e `tenant_id = NULL` (substitua `AUTH_USER_UUID` pelo UUID real):
+
+```sql
+INSERT INTO public.users (id, name, email, role, tenant_id)
+VALUES ('AUTH_USER_UUID', 'Super Admin', 'seu-email@dominio.com', 'super_admin', NULL);
+```
+
+A partir daí, somente esse superadmin cria cada loja e o login do proprietário pelo painel.
 
 ### Gemini API (para OCR e IA)
 1. Obtenha uma chave em [Google AI Studio](https://aistudio.google.com)

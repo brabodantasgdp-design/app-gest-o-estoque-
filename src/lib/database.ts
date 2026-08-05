@@ -1,5 +1,4 @@
 import { supabase, isConfigured } from './supabase';
-import { createClient } from '@supabase/supabase-js';
 import type { Tenant, Insumo, FichaTecnica, Product, Order, InvoiceScan, User, RecipeItem } from '../types';
 
 // ============================================
@@ -53,32 +52,9 @@ function genId() {
 // ============================================
 export const authService = {
   async login(email: string, password: string) {
-    const adminEmail = import.meta.env.SUPABASE_ADMIN_EMAIL || 'brabo.dantas.gdp@gmail.com';
-    const adminPassword = import.meta.env.SUPABASE_ADMIN_PASSWORD || '87849244';
-
-    // Super admin
-    if (email === adminEmail && password === adminPassword && !isConfigured) {
-      const userData = { id: 'usr-superadmin', name: 'Brabo Dantas', email, role: 'super_admin' as const, tenantId: undefined, tenantName: 'Painel Global SaaS' };
-      localStorage.setItem('ebd_current_user', JSON.stringify(userData));
-      return { success: true, user: userData };
-    }
-
-    // Regular user login via Supabase Auth
     if (!isConfigured) return { success: false, message: 'Sistema offline' };
 
     try {
-      if (email === adminEmail) {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-        if (authError || !authData.user) return { success: false, message: 'Email ou senha do super admin incorretos.' };
-        const { error: profileError } = await supabase.from(TABLES.USER).upsert({
-          id: authData.user.id, name: 'Brabo Dantas', email, role: 'super_admin', tenant_id: null,
-        }, { onConflict: 'id' });
-        if (profileError) throw profileError;
-        const userData = { id: authData.user.id, name: 'Brabo Dantas', email, role: 'super_admin' as const, tenantId: undefined, tenantName: 'Painel Global SaaS' };
-        localStorage.setItem('ebd_current_user', JSON.stringify(userData));
-        return { success: true, user: userData };
-      }
-
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError || !authData.user) return { success: false, message: 'Email ou senha incorretos.' };
 
@@ -186,6 +162,34 @@ export const tenantsService = {
     }).select().single();
     if (error) throw error;
     return mapTenant(data);
+  },
+
+  async createWithOwner(input: {
+    name: string;
+    ownerName: string;
+    email: string;
+    password: string;
+    cnpjStore: string;
+    plan: Tenant['plan'];
+    status: Tenant['status'];
+    accessDaysRemaining: number;
+    expirationDate: string;
+    maxMonthlyScans: number;
+    scansUsedThisMonth: number;
+  }) {
+    if (!isConfigured) throw new Error('Supabase não está configurado.');
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error('Sessão do superadmin expirada. Faça login novamente.');
+
+    const response = await fetch('/api/admin/stores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(input),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Não foi possível criar a loja e o acesso do dono.');
+    return mapTenant(result.tenant);
   },
 
   async update(id: string, updates: Partial<Tenant>) {
@@ -345,7 +349,7 @@ export const fichasService = {
         const { data: ings } = await supabase
           .from(TABLES.RECIPE_INGREDIENT)
           .select('*')
-          .eq('ficha_id', f.id);
+          .eq('ficha_tecnica_id', f.id);
         fichas.push({
           id: f.id,
           tenantId: f.tenant_id,
@@ -420,7 +424,7 @@ export const fichasService = {
 
     if (ingredients.length > 0 && fichaData) {
       const { error: ingError } = await supabase.from(TABLES.RECIPE_INGREDIENT).insert(ingredients.map(ing => ({
-        ficha_id: fichaData.id,
+        ficha_tecnica_id: fichaData.id,
         insumo_id: ing.insumoId,
         insumo_name: ing.insumoName,
         quantity: ing.quantity,
@@ -799,77 +803,6 @@ export const invoicesService = {
     const { data: record } = await supabase.from(TABLES.INVOICE).select('tenant_id').eq('id', id).single();
     if (!record) return;
     const { error } = await supabase.from(TABLES.INVOICE).delete().eq('id', id).eq('tenant_id', record.tenant_id);
-    if (error) throw error;
-  },
-};
-
-// ============================================
-// USERS SERVICE
-// ============================================
-export const usersService = {
-  async getAll() {
-    if (!isConfigured) return loadLocal<any>('ebd_users');
-    const { data, error } = await supabase.from(TABLES.USER).select('*').order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  },
-
-  async getByTenant(tenantId: string) {
-    if (!isConfigured) return loadLocal<any>('ebd_users').filter((u: any) => u.tenant_id === tenantId);
-    const { data, error } = await supabase.from(TABLES.USER).select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  },
-
-  async create(user: { name: string; email: string; password: string; role: string; tenant_id: string }) {
-    if (!isConfigured) {
-      const u = { id: genId(), ...user, password: undefined, created_at: new Date().toISOString() };
-      const all = loadLocal<any>('ebd_users');
-      all.push(u);
-      saveLocal('ebd_users', all);
-      return u;
-    }
-    const authClient = createClient(
-      import.meta.env.VITE_SUPABASE_URL,
-      import.meta.env.VITE_SUPABASE_ANON_KEY,
-      { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
-    );
-    const { data: authData, error: authError } = await authClient.auth.signUp({
-      email: user.email,
-      password: user.password,
-    });
-    if (authError || !authData.user) throw authError || new Error('Não foi possível criar o login.');
-
-    const { data, error } = await supabase.from(TABLES.USER).insert({
-      id: authData.user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      tenant_id: user.tenant_id,
-    }).select().single();
-    if (error) throw error;
-    return data;
-  },
-
-  async update(id: string, updates: any) {
-    if (!isConfigured) {
-      const all = loadLocal<any>('ebd_users');
-      const idx = all.findIndex((u: any) => u.id === id);
-      if (idx >= 0) { all[idx] = { ...all[idx], ...updates }; saveLocal('ebd_users', all); }
-      return all[idx];
-    }
-    const { data, error } = await supabase.from(TABLES.USER).update(updates).eq('id', id).select().single();
-    if (error) throw error;
-    return data;
-  },
-
-  async delete(id: string) {
-    if (!isConfigured) {
-      const all = loadLocal<any>('ebd_users').filter((u: any) => u.id !== id);
-      saveLocal('ebd_users', all);
-      return;
-    }
-    const { error } = await supabase.from(TABLES.USER).delete().eq('id', id);
     if (error) throw error;
   },
 };
