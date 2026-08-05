@@ -62,13 +62,15 @@ export const authService = {
       return { success: true, user: userData };
     }
 
-    // Regular user lookup
+    // Regular user login via Supabase Auth
     if (!isConfigured) return { success: false, message: 'Sistema offline' };
 
     try {
-      const { data: user, error } = await supabase.from(TABLES.USER).select('id,name,email,password_hash,role,tenant_id').eq('email', email).single();
-      if (error || !user) return { success: false, message: 'Usuario nao encontrado. Verifique o email.' };
-      if (user.password_hash !== password) return { success: false, message: 'Senha incorreta.' };
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError || !authData.user) return { success: false, message: 'Email ou senha incorretos.' };
+
+      const { data: user, error } = await supabase.from(TABLES.USER).select('id,name,email,role,tenant_id').eq('id', authData.user.id).single();
+      if (error || !user) return { success: false, message: 'Perfil do usuário não está vinculado a uma loja.' };
 
       let tenantName = '';
       if (user.tenant_id) {
@@ -799,16 +801,29 @@ export const usersService = {
     return data || [];
   },
 
-  async create(user: { name: string; email: string; password_hash: string; role: string; tenant_id: string }) {
+  async create(user: { name: string; email: string; password: string; role: string; tenant_id: string }) {
     if (!isConfigured) {
-      const u = { id: genId(), ...user, created_at: new Date().toISOString() };
+      const u = { id: genId(), ...user, password: undefined, created_at: new Date().toISOString() };
       const all = loadLocal<any>('ebd_users');
       all.push(u);
       saveLocal('ebd_users', all);
       return u;
     }
-    const { data, error } = await supabase.from(TABLES.USER).insert(user).select().single();
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: user.email,
+      password: user.password,
+    });
+    if (authError || !authData.user) throw authError || new Error('Não foi possível criar o login.');
+
+    const { data, error } = await supabase.from(TABLES.USER).insert({
+      id: authData.user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      tenant_id: user.tenant_id,
+    }).select().single();
     if (error) throw error;
+    await supabase.auth.signOut();
     return data;
   },
 

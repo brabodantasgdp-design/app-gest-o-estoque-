@@ -73,7 +73,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
     }
     try {
       await usersService.create({
-        name: newUserName, email: newUserEmail, password_hash: newUserPassword,
+        name: newUserName, email: newUserEmail, password: newUserPassword,
         role: newUserRole, tenant_id: newUserTenant,
       });
       setNewUserName(''); setNewUserEmail(''); setNewUserPassword('');
