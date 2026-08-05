@@ -17,6 +17,23 @@ const TABLES = {
   USER: 'User',
 };
 
+function mapTenant(t: any): Tenant {
+  return {
+    id: t.id,
+    name: t.name,
+    ownerName: t.owner_name ?? t.ownerName ?? '',
+    email: t.email ?? '',
+    cnpjStore: t.cnpj_store ?? t.cnpjStore ?? '',
+    plan: t.plan,
+    status: t.status,
+    accessDaysRemaining: t.access_days_remaining ?? t.accessDaysRemaining ?? 0,
+    expirationDate: t.expiration_date ?? t.expirationDate ?? '',
+    maxMonthlyScans: t.max_monthly_scans ?? t.maxMonthlyScans ?? 0,
+    scansUsedThisMonth: t.scans_used_this_month ?? t.scansUsedThisMonth ?? 0,
+    createdAt: t.created_at ?? t.createdAt ?? '',
+  };
+}
+
 // ============================================
 // LOCAL STORAGE HELPERS (fallback when Supabase offline)
 // ============================================
@@ -49,8 +66,9 @@ export const authService = {
     if (!isConfigured) return { success: false, message: 'Sistema offline' };
 
     try {
-      const { data: user, error } = await supabase.from(TABLES.USER).select('id,name,email,role,tenant_id').eq('email', email).single();
+      const { data: user, error } = await supabase.from(TABLES.USER).select('id,name,email,password_hash,role,tenant_id').eq('email', email).single();
       if (error || !user) return { success: false, message: 'Usuario nao encontrado. Verifique o email.' };
+      if (user.password_hash !== password) return { success: false, message: 'Senha incorreta.' };
 
       let tenantName = '';
       if (user.tenant_id) {
@@ -115,21 +133,7 @@ export const tenantsService = {
     try {
       const { data, error } = await supabase.from(TABLES.TENANT).select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      const tenants = (data || []).map(t => ({
-        id: t.id,
-        name: t.name,
-        ownerName: t.owner_name,
-        email: t.email,
-        password: t.password,
-        cnpjStore: t.cnpj_store,
-        plan: t.plan,
-        status: t.status,
-        accessDaysRemaining: t.access_days_remaining,
-        expirationDate: t.expiration_date,
-        maxMonthlyScans: t.max_monthly_scans,
-        scansUsedThisMonth: t.scans_used_this_month,
-        createdAt: t.created_at,
-      })) as Tenant[];
+      const tenants = (data || []).map(mapTenant);
       saveLocal('ebd_tenants', tenants);
       return tenants;
     } catch (err) {
@@ -150,8 +154,7 @@ export const tenantsService = {
       name: tenant.name,
       owner_name: tenant.ownerName,
       email: tenant.email,
-      password: tenant.password,
-      cnpj_store: tenant.cnpjStore,
+       cnpj_store: tenant.cnpjStore,
       plan: tenant.plan,
       status: tenant.status,
       access_days_remaining: tenant.accessDaysRemaining,
@@ -160,7 +163,7 @@ export const tenantsService = {
       scans_used_this_month: tenant.scansUsedThisMonth,
     }).select().single();
     if (error) throw error;
-    return data;
+    return mapTenant(data);
   },
 
   async update(id: string, updates: Partial<Tenant>) {
@@ -177,7 +180,7 @@ export const tenantsService = {
       status: updates.status,
     }).eq('id', id).select().single();
     if (error) throw error;
-    return data;
+    return mapTenant(data);
   },
 
   async delete(id: string) {
@@ -796,7 +799,7 @@ export const usersService = {
     return data || [];
   },
 
-  async create(user: { name: string; email: string; role: string; tenant_id: string }) {
+  async create(user: { name: string; email: string; password_hash: string; role: string; tenant_id: string }) {
     if (!isConfigured) {
       const u = { id: genId(), ...user, created_at: new Date().toISOString() };
       const all = loadLocal<any>('ebd_users');

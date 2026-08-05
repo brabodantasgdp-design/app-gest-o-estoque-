@@ -60,19 +60,23 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
   const [showUserForm, setShowUserForm] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState('store_owner');
   const [newUserTenant, setNewUserTenant] = useState('');
 
   useEffect(() => { usersService.getAll().then(setAllUsers).catch(() => {}); }, []);
 
   const handleAddUser = async () => {
-    if (!newUserName || !newUserEmail || !newUserTenant) return;
+    if (!newUserName || !newUserEmail || !newUserPassword || !newUserTenant) {
+      alert('Informe nome, email, senha e loja.');
+      return;
+    }
     try {
       await usersService.create({
-        name: newUserName, email: newUserEmail,
+        name: newUserName, email: newUserEmail, password_hash: newUserPassword,
         role: newUserRole, tenant_id: newUserTenant,
       });
-      setNewUserName(''); setNewUserEmail('');
+      setNewUserName(''); setNewUserEmail(''); setNewUserPassword('');
       setShowUserForm(false);
       const updated = await usersService.getAll();
       setAllUsers(updated);
@@ -136,8 +140,8 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
 
   const handleSaveTenant = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!storeName || !email) {
-      alert('Informe o nome do estabelecimento e o e-mail do proprietário.');
+    if (!storeName || !ownerName) {
+      alert('Informe o nome da loja e do proprietário.');
       return;
     }
 
@@ -159,7 +163,7 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
     } else {
       try {
         const newTenant = await tenantsService.create({
-          name: storeName, ownerName, email, password: password || '12345678',
+           name: storeName, ownerName, email: email || `loja-${Date.now()}@local.invalid`, password: password || '',
           cnpjStore: cnpj || '', plan, status,
           accessDaysRemaining: accessDays, expirationDate: expStr,
           maxMonthlyScans: plan === 'Enterprise' ? 1000 : plan === 'Pro' ? 300 : 30,
@@ -511,40 +515,6 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
                 </div>
               </div>
 
-              {/* Login Credentials Box */}
-              <div className="p-3 rounded-xl bg-[#18181C] border border-amber-500/20 space-y-2">
-                <div className="text-[11px] font-extrabold text-amber-400 flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5" />
-                  <span>Credenciais de Acesso do Lojista (E-mail + Senha)</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-zinc-400 font-bold mb-1">E-mail de Login</label>
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="carlos@loja.com"
-                      className="w-full bg-[#121214] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500 font-mono text-xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-zinc-400 font-bold mb-1">Senha de Acesso</label>
-                    <input
-                      type="text"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Ex: lojista123"
-                      className="w-full bg-[#121214] border border-zinc-800 rounded-xl p-2.5 text-amber-400 font-mono font-bold focus:outline-none focus:border-amber-500 text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-zinc-400 font-bold mb-1">Plano SaaS</label>
@@ -583,57 +553,9 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
                     className="w-full bg-[#1A1A1E] border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-500 font-mono"
                   />
                 </div>
-      </div>
+               </div>
+             </div>
 
-      {/* ========== GESTÃO DE USUÁRIOS ========== */}
-      <div className="mt-8 bg-[#121214] border border-zinc-800/80 rounded-2xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-extrabold text-white flex items-center gap-2"><Users className="w-4 h-4 text-amber-500"/> Usuários</h2>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Cadastre usuários para acessar o sistema</p>
-          </div>
-          <button onClick={() => setShowUserForm(!showUserForm)} className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[11px] hover:bg-amber-500/20 flex items-center gap-1 cursor-pointer">
-            <Plus className="w-3 h-3"/> Novo
-          </button>
-        </div>
-
-        {showUserForm && (
-          <div className="flex flex-wrap gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
-            <input placeholder="Nome" value={newUserName} onChange={e => setNewUserName(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40 w-full sm:w-auto"/>
-            <input placeholder="Email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40 w-full sm:w-auto"/>
-            <select value={newUserTenant} onChange={e => setNewUserTenant(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500/40">
-              <option value="">Selecione a loja</option>
-              {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <button onClick={handleAddUser} className="px-4 py-2 rounded-lg bg-amber-500 text-black font-extrabold text-xs hover:bg-amber-400 cursor-pointer">Criar</button>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {allUsers.length === 0 && <div className="text-xs text-zinc-500 text-center py-4">Nenhum usuário cadastrado.</div>}
-          {allUsers.map(u => {
-            const tenant = tenants.find(t => t.id === u.tenant_id);
-            return (
-              <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-[#18181b] border border-zinc-800/60 text-xs">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 font-extrabold text-[10px] flex items-center justify-center border border-amber-500/20">{u.name?.charAt(0).toUpperCase()}</div>
-                  <div className="min-w-0">
-                    <div className="text-white font-bold truncate">{u.name}</div>
-                    <div className="text-zinc-500 text-[10px] truncate">{u.email}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded-full text-zinc-400">{u.role === 'super_admin' ? 'Admin' : u.role === 'store_owner' ? 'Dono' : 'Func'}</span>
-                  <span className="text-[10px] text-zinc-500 truncate max-w-[100px]">{tenant?.name || 'Sem loja'}</span>
-                  <button onClick={() => handleDeleteUser(u.id)} className="text-zinc-600 hover:text-red-400 cursor-pointer"><Trash2 className="w-3 h-3"/></button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-    </div>
             <div className="flex justify-end gap-3 pt-3 border-t border-zinc-800">
               <button
                 type="button"
@@ -652,6 +574,41 @@ export const SuperAdminModule: React.FC<SuperAdminModuleProps> = ({
           </form>
         </div>
       )}
+
+      {/* Gestão de usuários fica fora do formulário de loja. */}
+      <div className="mt-8 bg-[#121214] border border-zinc-800/80 rounded-2xl p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-extrabold text-white flex items-center gap-2"><Users className="w-4 h-4 text-amber-500"/> Usuários</h2>
+            <p className="text-[11px] text-zinc-400 mt-0.5">Vincule cada usuário a uma loja criada.</p>
+          </div>
+          <button type="button" onClick={() => setShowUserForm(!showUserForm)} className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[11px] hover:bg-amber-500/20 flex items-center gap-1 cursor-pointer">
+            <Plus className="w-3 h-3"/> Novo usuário
+          </button>
+        </div>
+        {showUserForm && (
+          <div className="flex flex-wrap gap-3 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
+            <input placeholder="Nome" value={newUserName} onChange={e => setNewUserName(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none w-full sm:w-auto"/>
+            <input placeholder="Email de login" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none w-full sm:w-auto"/>
+            <input placeholder="Senha" type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none w-full sm:w-auto"/>
+            <select value={newUserTenant} onChange={e => setNewUserTenant(e.target.value)} className="bg-[#0B0B0C] border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none">
+              <option value="">Selecione a loja</option>
+              {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <button type="button" onClick={handleAddUser} className="px-4 py-2 rounded-lg bg-amber-500 text-black font-extrabold text-xs hover:bg-amber-400 cursor-pointer">Criar usuário</button>
+          </div>
+        )}
+        <div className="space-y-2">
+          {allUsers.length === 0 && <div className="text-xs text-zinc-500 text-center py-4">Nenhum usuário cadastrado.</div>}
+          {allUsers.map(u => {
+            const tenant = tenants.find(t => t.id === u.tenant_id);
+            return <div key={u.id} className="flex items-center justify-between p-3 rounded-xl bg-[#18181b] border border-zinc-800/60 text-xs">
+              <div><div className="text-white font-bold">{u.name}</div><div className="text-zinc-500 text-[10px]">{u.email}</div></div>
+              <div className="flex items-center gap-3"><span className="text-[10px] text-zinc-400">{tenant?.name || 'Sem loja'}</span><button type="button" onClick={() => handleDeleteUser(u.id)} className="text-zinc-600 hover:text-red-400 cursor-pointer"><Trash2 className="w-3 h-3"/></button></div>
+            </div>;
+          })}
+        </div>
+      </div>
 
     </div>
   );
