@@ -106,25 +106,31 @@ export const authService = {
   },
 
   async getCurrentUser() {
-    // Try localStorage first (session persistence without Supabase Auth)
-    try {
-      const stored = localStorage.getItem('ebd_current_user');
-      if (stored) {
-        return JSON.parse(stored);
+    // With Supabase configured, localStorage alone is not an authenticated session.
+    if (!isConfigured) {
+      try {
+        const stored = localStorage.getItem('ebd_current_user');
+        return stored ? JSON.parse(stored) : null;
+      } catch (_) {
+        return null;
       }
-    } catch (_) {}
+    }
 
-    // Try Supabase Auth if configured
-    if (!isConfigured) return null;
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+      if (!user) {
+        localStorage.removeItem('ebd_current_user');
+        return null;
+      }
       const { data: userData } = await supabase
         .from(TABLES.USER)
         .select('*')
         .eq('id', user.id)
         .single();
-      if (!userData) return null;
+      if (!userData) {
+        localStorage.removeItem('ebd_current_user');
+        return null;
+      }
       return {
         id: userData.id,
         name: userData.name,
@@ -134,6 +140,7 @@ export const authService = {
         tenantName: '',
       };
     } catch (_) {
+      localStorage.removeItem('ebd_current_user');
       return null;
     }
   }
