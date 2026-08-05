@@ -1,4 +1,16 @@
 -- EBD canonical schema. WARNING: deletes all application data.
+-- Remove schemas antigos PascalCase e o schema anterior snake_case.
+DROP TABLE IF EXISTS "InvoiceItem" CASCADE;
+DROP TABLE IF EXISTS "OrderItem" CASCADE;
+DROP TABLE IF EXISTS "RecipeIngredient" CASCADE;
+DROP TABLE IF EXISTS "Invoice" CASCADE;
+DROP TABLE IF EXISTS "Order" CASCADE;
+DROP TABLE IF EXISTS "Product" CASCADE;
+DROP TABLE IF EXISTS "FichaTecnica" CASCADE;
+DROP TABLE IF EXISTS "Insumo" CASCADE;
+DROP TABLE IF EXISTS "User" CASCADE;
+DROP TABLE IF EXISTS "Tenant" CASCADE;
+
 DROP TABLE IF EXISTS invoice_items CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS recipe_ingredients CASCADE;
