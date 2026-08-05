@@ -5,16 +5,16 @@ import type { Tenant, Insumo, FichaTecnica, Product, Order, InvoiceScan, User, R
 // TABLE NAMES (PascalCase for Supabase)
 // ============================================
 const TABLES = {
-  TENANT: 'Tenant',
-  INSUMO: 'Insumo',
-  FICHA: 'FichaTecnica',
-  RECIPE_INGREDIENT: 'RecipeIngredient',
-  PRODUCT: 'Product',
-  ORDER: 'Order',
-  ORDER_ITEM: 'OrderItem',
-  INVOICE: 'Invoice',
-  INVOICE_ITEM: 'InvoiceItem',
-  USER: 'User',
+  TENANT: 'tenants',
+  INSUMO: 'insumos',
+  FICHA: 'fichas_tecnicas',
+  RECIPE_INGREDIENT: 'recipe_ingredients',
+  PRODUCT: 'products',
+  ORDER: 'orders',
+  ORDER_ITEM: 'order_items',
+  INVOICE: 'invoices',
+  INVOICE_ITEM: 'invoice_items',
+  USER: 'users',
 };
 
 function mapTenant(t: any): Tenant {
@@ -56,7 +56,7 @@ export const authService = {
     const adminPassword = import.meta.env.SUPABASE_ADMIN_PASSWORD || '87849244';
 
     // Super admin
-    if (email === adminEmail && password === adminPassword) {
+    if (email === adminEmail && password === adminPassword && !isConfigured) {
       const userData = { id: 'usr-superadmin', name: 'Brabo Dantas', email, role: 'super_admin' as const, tenantId: undefined, tenantName: 'Painel Global SaaS' };
       localStorage.setItem('ebd_current_user', JSON.stringify(userData));
       return { success: true, user: userData };
@@ -66,6 +66,18 @@ export const authService = {
     if (!isConfigured) return { success: false, message: 'Sistema offline' };
 
     try {
+      if (email === adminEmail) {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError || !authData.user) return { success: false, message: 'Email ou senha do super admin incorretos.' };
+        const { error: profileError } = await supabase.from(TABLES.USER).upsert({
+          id: authData.user.id, name: 'Brabo Dantas', email, role: 'super_admin', tenant_id: null,
+        }, { onConflict: 'id' });
+        if (profileError) throw profileError;
+        const userData = { id: authData.user.id, name: 'Brabo Dantas', email, role: 'super_admin' as const, tenantId: undefined, tenantName: 'Painel Global SaaS' };
+        localStorage.setItem('ebd_current_user', JSON.stringify(userData));
+        return { success: true, user: userData };
+      }
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError || !authData.user) return { success: false, message: 'Email ou senha incorretos.' };
 
